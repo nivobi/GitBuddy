@@ -35,8 +35,11 @@ Since this is a work in progress, the best way to use it is to build it locally:
 git clone [https://github.com/nivobi/GitBuddy.git](https://github.com/nivobi/GitBuddy.git)
 cd GitBuddy
 dotnet build -c Release
+```
 # Create your link (Mac/Linux)
+```bash
 ln -s "$(pwd)/bin/Release/net8.0/GitBuddy" ~/.dotnet/tools/buddy
+```
 Note: Ensure ~/.dotnet/tools is in your PATH.
 
 🌱 Roadmap & Learning
