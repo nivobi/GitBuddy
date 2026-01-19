@@ -42,7 +42,7 @@ ln -s "$(pwd)/bin/Release/net8.0/GitBuddy" ~/.dotnet/tools/buddy
 ```
 Note: Ensure ~/.dotnet/tools is in your PATH.
 
-🌱 Roadmap & Learning
+## 🌱 Roadmap & Learning
 This is my first open-source project, and I'm using it to explore:
 
 Building CLI tools with C# and Spectre.Console.
