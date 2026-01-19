@@ -1,0 +1,1 @@
+This project is a Git assistant tool called GitBuddy that integrates AI-powered commit message generation and project analysis with Git workflows. Its primary tech stack includes C# with Spectre.Console for CLI interfaces, Git commands for version control, and AI APIs (OpenAI, OpenRouter, DeepSeek) for intelligent suggestions.
