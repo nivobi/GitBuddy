@@ -36,7 +36,7 @@ git clone [https://github.com/nivobi/GitBuddy.git](https://github.com/nivobi/Git
 cd GitBuddy
 dotnet build -c Release
 ```
-# Create your link (Mac/Linux)
+Create your link (Mac/Linux)
 ```bash
 ln -s "$(pwd)/bin/Release/net8.0/GitBuddy" ~/.dotnet/tools/buddy
 ```
