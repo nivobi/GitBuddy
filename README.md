@@ -29,7 +29,7 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
 You can now install GitBuddy directly as a global tool!
 
 ### Prerequisites
-* [.NET 9.0 SDK](https://dotnet.microsoft.com/download)
+* [.NET 8.0 SDK](https://dotnet.microsoft.com/download)
 * [GitHub CLI (gh)](https://cli.github.com/) (Required for the auto-repo creation feature)
 
 ### Standard Install (Recommended)
