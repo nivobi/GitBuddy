@@ -1,4 +1,6 @@
-﻿using Spectre.Console.Cli;
+﻿using System.Reflection;
+using Spectre.Console;
+using Spectre.Console.Cli;
 
 namespace GitBuddy
 {
@@ -10,7 +12,13 @@ namespace GitBuddy
 
             app.Configure(config =>
             {
+
+                var version = Assembly.GetExecutingAssembly()
+                          .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                          .InformationalVersion ?? "1.0.0";
+
                 config.SetApplicationName("git-buddy");
+                config.SetApplicationVersion(version);
 
                 config.AddCommand<StatusCommand>("status")
                     .WithDescription("Check the current state of the repo.");
@@ -33,6 +41,22 @@ namespace GitBuddy
                 config.AddCommand<DescribeCommand>("describe")
                     .WithDescription("Analyze the project and update .buddycontext.");
 
+                config.AddCommand<UpdateCommand>("update")
+                    .WithDescription("Updates GitBuddy to the latest version from NuGet");
+
+                // --- NEW WELCOME LOGIC START ---
+                string welcomeFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitbuddy_welcome");
+
+                if (!File.Exists(welcomeFilePath))
+                {
+                    AnsiConsole.Write(new FigletText("GitBuddy").Color(Color.Blue));
+                    AnsiConsole.MarkupLine("[bold blue]Welcome to GitBuddy![/] Your AI-powered Git companion.");
+                    AnsiConsole.MarkupLine("Try typing [yellow]buddy --help[/] to see what I can do.");
+                    AnsiConsole.WriteLine();
+                    
+                    File.WriteAllText(welcomeFilePath, DateTime.Now.ToString());
+                }
+                // --- NEW WELCOME LOGIC END ---
             });
 
             return app.Run(args);
