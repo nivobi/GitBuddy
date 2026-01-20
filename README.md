@@ -19,36 +19,38 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
 - **AI-Powered Saves:** `buddy save --ai` stages my work and uses an LLM to suggest professional commit messages based on what I actually changed.
 - **AI Context Bridge:** `buddy describe` creates a `.buddycontext` file. This acts as a "briefing document" for the AI, providing the high-level project knowledge it needs to generate better commit messages.
 - **Clean Setup:** `buddy setup` gets a new folder ready with a solid `.gitignore` so I don't accidentally upload junk or build files.
+- **Self-Updating:** `buddy update` checks NuGet for the latest version and updates itself automatically.
+- **Version Check:** `buddy --version` instantly lets you know which version of the tool you are running.
 
 
 
-## 🛠 Installation (Development Build)
+## 🛠 Installation
 
-Since this is a work in progress, the best way to use it is to build it locally:
+You can now install GitBuddy directly as a global tool!
 
 ### Prerequisites
-* [.NET 8.0 SDK](https://dotnet.microsoft.com/download)
+* [.NET 9.0 SDK](https://dotnet.microsoft.com/download)
 * [GitHub CLI (gh)](https://cli.github.com/) (Required for the auto-repo creation feature)
 
-### Setup
+### Standard Install (Recommended)
+```bash
+dotnet tool install -g Nivobi.GitBuddy
+```
+### Manual Build (For Contributors)
+If you want to modify the code yourself:
 ```bash
 git clone [https://github.com/nivobi/GitBuddy.git](https://github.com/nivobi/GitBuddy.git)
 cd GitBuddy
 dotnet build -c Release
 ```
-Create your link (Mac/Linux)
-```bash
-ln -s "$(pwd)/bin/Release/net8.0/GitBuddy" ~/.dotnet/tools/buddy
-```
-Note: Ensure ~/.dotnet/tools is in your PATH.
 
 ## 🌱 Roadmap & Learning
 This is my first open-source project, and I'm using it to explore:
 
-Building CLI tools with C# and Spectre.Console.
+- Building CLI tools with C# and Spectre.Console.
 
-Bridging the gap between local development and AI intelligence.
+- Bridging the gap between local development and AI intelligence.
 
-Automating Git processes to reduce cognitive load.
+- Automating Git processes to reduce cognitive load.
 
 If you have ideas or want to follow along with the development, feel free to check out the code!
