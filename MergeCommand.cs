@@ -14,6 +14,10 @@ namespace GitBuddy
             [Description("Branch to merge from (interactive if not specified)")]
             public string? Branch { get; set; }
 
+            [CommandOption("--into")]
+            [Description("Merge current branch into target (interactive if no value)")]
+            public string? Into { get; set; }
+
             [CommandOption("--ai")]
             [Description("Use AI to generate merge commit message")]
             public bool UseAi { get; set; }
@@ -37,28 +41,66 @@ namespace GitBuddy
                 return 1;
             }
 
-            // Get branch to merge from
-            string? branchToMerge = settings.Branch;
+            string sourceBranch;
+            string targetBranch;
 
-            if (string.IsNullOrWhiteSpace(branchToMerge))
+            // Determine merge direction based on --into flag
+            if (settings.Into != null)
             {
-                branchToMerge = await SelectBranch(currentBranch);
-                if (string.IsNullOrWhiteSpace(branchToMerge))
+                // --into mode: merge current branch INTO another branch
+                sourceBranch = currentBranch;
+
+                // If --into has no value, interactively select target
+                if (string.IsNullOrWhiteSpace(settings.Into))
                 {
-                    return 0; // User cancelled
+                    targetBranch = await SelectBranch(currentBranch, $"Which branch do you want to merge [blue]{currentBranch}[/] into?");
+                    if (string.IsNullOrWhiteSpace(targetBranch))
+                    {
+                        return 0; // User cancelled
+                    }
+                }
+                else
+                {
+                    targetBranch = settings.Into;
+                }
+            }
+            else
+            {
+                // Normal mode: merge another branch INTO current branch
+                targetBranch = currentBranch;
+
+                // Get branch to merge from
+                if (string.IsNullOrWhiteSpace(settings.Branch))
+                {
+                    sourceBranch = await SelectBranch(currentBranch, "Which branch do you want to [green]merge[/]?");
+                    if (string.IsNullOrWhiteSpace(sourceBranch))
+                    {
+                        return 0; // User cancelled
+                    }
+                }
+                else
+                {
+                    sourceBranch = settings.Branch;
                 }
             }
 
-            // Check if branch exists
-            var branchCheck = GitHelper.Run($"rev-parse --verify {branchToMerge}");
-            if (branchCheck.Contains("fatal"))
+            // Check if branches exist
+            var sourceCheck = GitHelper.Run($"rev-parse --verify {sourceBranch}");
+            if (sourceCheck.Contains("fatal"))
             {
-                AnsiConsole.MarkupLine($"[red]✗ Error:[/] Branch [blue]{branchToMerge}[/] does not exist.");
+                AnsiConsole.MarkupLine($"[red]✗ Error:[/] Branch [blue]{sourceBranch}[/] does not exist.");
+                return 1;
+            }
+
+            var targetCheck = GitHelper.Run($"rev-parse --verify {targetBranch}");
+            if (targetCheck.Contains("fatal"))
+            {
+                AnsiConsole.MarkupLine($"[red]✗ Error:[/] Branch [blue]{targetBranch}[/] does not exist.");
                 return 1;
             }
 
             // Show what will be merged
-            AnsiConsole.Write(new Rule($"[blue]Merging {branchToMerge} into {currentBranch}[/]"));
+            AnsiConsole.Write(new Rule($"[blue]Merging {sourceBranch} into {targetBranch}[/]"));
             AnsiConsole.WriteLine();
 
             // Check for uncommitted changes
@@ -74,20 +116,34 @@ namespace GitBuddy
             }
 
             // Preview commits that will be merged
-            await ShowMergePreview(currentBranch, branchToMerge);
+            await ShowMergePreview(targetBranch, sourceBranch);
 
             // Confirm merge
-            if (!AnsiConsole.Confirm($"\nMerge [blue]{branchToMerge}[/] into [blue]{currentBranch}[/]?", true))
+            if (!AnsiConsole.Confirm($"\nMerge [blue]{sourceBranch}[/] into [blue]{targetBranch}[/]?", true))
             {
                 AnsiConsole.MarkupLine("[yellow]Merge cancelled.[/]");
                 return 0;
             }
 
+            // If target is not current branch, switch to it first
+            if (targetBranch != currentBranch)
+            {
+                AnsiConsole.Status().Start($"Switching to [blue]{targetBranch}[/]...", ctx =>
+                {
+                    var switchResult = GitHelper.Run($"checkout {targetBranch}");
+                    if (switchResult.Contains("error:") || switchResult.Contains("fatal:"))
+                    {
+                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult}");
+                        return;
+                    }
+                });
+            }
+
             // Attempt the merge
-            return await PerformMerge(branchToMerge, currentBranch, settings.UseAi);
+            return await PerformMerge(sourceBranch, targetBranch, settings.UseAi);
         }
 
-        private async Task<string?> SelectBranch(string currentBranch)
+        private async Task<string?> SelectBranch(string currentBranch, string? title = null)
         {
             return await Task.Run(() =>
             {
@@ -116,7 +172,7 @@ namespace GitBuddy
 
                 return AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
-                        .Title("Which branch do you want to [green]merge[/]?")
+                        .Title(title ?? "Which branch do you want to [green]merge[/]?")
                         .PageSize(10)
                         .AddChoices(branches));
             });
