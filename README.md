@@ -15,15 +15,64 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
 * **Works smarter:** Using AI to analyze code changes so I don't have to spend time thinking about commit messages when I'm in the flow.
 
 ## ✨ Current Features
-- **Smart Sync:** `buddy sync` handles the heavy lifting of communicating with GitHub. It detects if a repository doesn't exist yet and offers to create it (Public or Private) and link it for you.
+
+### Core Commands
+- **Smart Sync:** `buddy sync` handles the heavy lifting of communicating with GitHub. It detects if a repository doesn't exist yet and offers to create it (Public or Private) and link it for you. After syncing, it automatically detects merged branches and offers to clean them up (both local and remote).
+
 - **AI-Powered Saves:** `buddy save --ai` stages my work and uses an LLM to suggest professional commit messages based on what I actually changed.
+
 - **AI Context Bridge:** `buddy describe` creates a `.buddycontext` file. This acts as a "briefing document" for the AI, providing the high-level project knowledge it needs to generate better commit messages.
-- **Smart Branch Management:** `buddy branch` simplifies working with branches. Create branches with naming conventions (feature/, bugfix/), switch between branches interactively, list all branches with commit info, and clean up merged branches safely.
+
+### Branch Management
+- **Smart Branch Operations:** `buddy branch` provides intuitive branch management:
+  - `buddy branch create <name>` - Create branches with automatic naming conventions (feature/, bugfix/, hotfix/)
+  - `buddy branch switch` - Interactive branch switcher with uncommitted change detection
+  - `buddy branch list` - Display all branches with commit info in a formatted table
+  - `buddy branch delete` - Safely delete branches with automatic switching if needed
+  - `buddy branch rename` - Rename branches easily (current or any other)
+  - `buddy branch clean` - Remove all merged branches at once
+
+### Merge Command
+- **Intelligent Merging:** `buddy merge` simplifies the merge workflow:
+  - Interactive branch selection for merging
+  - `buddy merge --into` - Reverse merge: merge current branch into another without switching
+  - `buddy merge --ai` - AI-generated merge commit messages that summarize changes
+  - Automatic conflict detection with helpful resolution guidance
+  - Preview commits before merging
+  - Fast-forward detection
+
+### Other Tools
 - **Clean Setup:** `buddy setup` gets a new folder ready with a solid `.gitignore` so I don't accidentally upload junk or build files.
+
 - **Self-Updating:** `buddy update` checks NuGet for the latest version and updates itself automatically.
+
 - **Version Check:** `buddy --version` instantly lets you know which version of the tool you are running.
 
 
+
+## 📖 Quick Start Examples
+
+```bash
+# Create a new feature branch
+buddy branch create dark-mode
+# Creates: feature/dark-mode
+
+# Make your changes, then save with AI
+buddy save --ai
+# AI analyzes your changes and suggests a commit message
+
+# Merge your feature into master
+buddy merge --into master --ai
+# Merges current branch into master with AI-generated merge message
+
+# Push and cleanup
+buddy sync
+# Pushes changes and offers to delete merged branches
+
+# Switch between branches
+buddy branch switch
+# Interactive selection of available branches
+```
 
 ## 🛠 Installation
 
