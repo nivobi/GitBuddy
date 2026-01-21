@@ -487,3 +487,6 @@ $RECYCLE.BIN/
 config.json
 .buddyconfig
 secrets.json
+
+# Claude Code
+.claude

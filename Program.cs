@@ -22,7 +22,7 @@ namespace GitBuddy
 
                 config.AddCommand<StatusCommand>("status")
                     .WithDescription("Check the current state of the repo.");
-                    
+
                 config.AddCommand<SaveCommand>("save")
                     .WithDescription("Stage and commit all changes.");
 
@@ -31,6 +31,9 @@ namespace GitBuddy
 
                 config.AddCommand<SyncCommand>("sync")
                     .WithDescription("Pull latest changes and push your work.");
+
+                config.AddCommand<BranchCommand>("branch")
+                    .WithDescription("Smart branch management (create, switch, list, clean).");
 
                 config.AddCommand<UndoCommand>("undo")
                     .WithDescription("Go back in time (safely).");

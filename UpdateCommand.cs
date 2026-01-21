@@ -16,26 +16,34 @@ namespace GitBuddy
         {
             AnsiConsole.MarkupLine("[bold blue]Checking for GitBuddy updates...[/]");
 
-            AnsiConsole.Progress()
-                .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
-                .Start(ctx =>
-                {
-                    var task = ctx.AddTask("[green]Updating Nivobi.GitBuddy[/]");
+            var (success, output) = CheckForUpdate();
 
-                    RunDotnetUpdate();
-
-                    while (!task.IsFinished)
+            if (success && output.Contains("was successfully updated"))
+            {
+                AnsiConsole.Progress()
+                    .AutoClear(false)
+                    .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
+                    .Start(ctx =>
                     {
-                        task.Increment(5);
-                        Thread.Sleep(50);
-                    }
-                });
+                        var task = ctx.AddTask("[green]Updating Nivobi.GitBuddy[/]");
+                        task.Increment(100);
+                    });
 
-            AnsiConsole.MarkupLine("[bold green]✨ GitBuddy is now up to date![/]");
+                AnsiConsole.MarkupLine("[bold green]✨ GitBuddy has been updated to the latest version![/]");
+            }
+            else if (output.Contains("is already installed"))
+            {
+                AnsiConsole.MarkupLine("[bold green]✓[/] GitBuddy is already up to date!");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠[/] Unable to check for updates. Please try again later.");
+            }
+
             return 0;
         }
 
-        private static void RunDotnetUpdate()
+        private static (bool success, string output) CheckForUpdate()
         {
             try
             {
@@ -44,15 +52,23 @@ namespace GitBuddy
                     FileName = "dotnet",
                     Arguments = "tool update -g Nivobi.GitBuddy",
                     RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
 
                 using var process = Process.Start(processInfo);
-                process?.WaitForExit();
+                if (process == null) return (false, string.Empty);
+
+                var output = process.StandardOutput.ReadToEnd();
+                var error = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+
+                return (process.ExitCode == 0, output + error);
             }
             catch
             {
+                return (false, string.Empty);
             }
         }
     }

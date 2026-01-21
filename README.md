@@ -18,6 +18,7 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
 - **Smart Sync:** `buddy sync` handles the heavy lifting of communicating with GitHub. It detects if a repository doesn't exist yet and offers to create it (Public or Private) and link it for you.
 - **AI-Powered Saves:** `buddy save --ai` stages my work and uses an LLM to suggest professional commit messages based on what I actually changed.
 - **AI Context Bridge:** `buddy describe` creates a `.buddycontext` file. This acts as a "briefing document" for the AI, providing the high-level project knowledge it needs to generate better commit messages.
+- **Smart Branch Management:** `buddy branch` simplifies working with branches. Create branches with naming conventions (feature/, bugfix/), switch between branches interactively, list all branches with commit info, and clean up merged branches safely.
 - **Clean Setup:** `buddy setup` gets a new folder ready with a solid `.gitignore` so I don't accidentally upload junk or build files.
 - **Self-Updating:** `buddy update` checks NuGet for the latest version and updates itself automatically.
 - **Version Check:** `buddy --version` instantly lets you know which version of the tool you are running.
