@@ -28,7 +28,15 @@ namespace GitBuddy
             bool syncFailed = false;
             string errorDetails = "";
 
-            await AnsiConsole.Status().StartAsync("Syncing with GitHub...", async ctx => 
+            // Get current branch name
+            string currentBranch = GitHelper.Run("branch --show-current");
+            if (string.IsNullOrWhiteSpace(currentBranch))
+            {
+                AnsiConsole.MarkupLine("[red]✗[/] Could not determine current branch.");
+                return 1;
+            }
+
+            await AnsiConsole.Status().StartAsync("Syncing with GitHub...", async ctx =>
             {
                 await Task.Run(() => {
                     ctx.Status("Checking connection...");
@@ -42,12 +50,25 @@ namespace GitBuddy
                         return;
                     }
 
-                    ctx.Status("Pulling latest...");
-                    GitHelper.Run("pull origin master --rebase");
+                    ctx.Status($"Pulling latest from {currentBranch}...");
+                    // Try to pull, but don't fail if the branch doesn't exist on remote yet
+                    string pullOutput = GitHelper.Run($"pull origin {currentBranch} --rebase");
 
-                    ctx.Status("Pushing work...");
-                    string pushOutput = GitHelper.Run("push -u origin master");
-                    
+                    // It's okay if pull fails because the branch doesn't exist remotely yet
+                    if (!pullOutput.Contains("Couldn't find remote ref"))
+                    {
+                        // Check for actual pull errors (not "branch doesn't exist")
+                        if (pullOutput.Contains("fatal") && !pullOutput.Contains("Couldn't find remote ref"))
+                        {
+                            syncFailed = true;
+                            errorDetails = pullOutput;
+                            return;
+                        }
+                    }
+
+                    ctx.Status($"Pushing {currentBranch}...");
+                    string pushOutput = GitHelper.Run($"push -u origin {currentBranch}");
+
                     if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
                     {
                         syncFailed = true;
