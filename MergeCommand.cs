@@ -204,19 +204,9 @@ namespace GitBuddy
                 AnsiConsole.MarkupLine($"[grey]Merge commit:[/] {lastCommit}");
             }
 
-            // Ask if they want to delete the merged branch
-            if (AnsiConsole.Confirm($"\nDelete branch [blue]{branchToMerge}[/] now that it's merged?", false))
-            {
-                var deleteResult = GitHelper.Run($"branch -d {branchToMerge}");
-                if (deleteResult.Contains("Deleted branch"))
-                {
-                    AnsiConsole.MarkupLine($"[green]✓[/] Deleted branch [grey]{branchToMerge}[/]");
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine($"[yellow]Note:[/] {deleteResult}");
-                }
-            }
+            // Remind to sync and clean up
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[grey]Next:[/] Run [blue]buddy sync[/] to push changes and clean up merged branches.");
 
             return 0;
         }

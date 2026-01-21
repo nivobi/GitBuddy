@@ -117,9 +117,80 @@ namespace GitBuddy
                 // Show GitHub URL
                 string repoUrl = $"https://github.com/{repoDisplay}";
                 AnsiConsole.MarkupLine($"[grey]→[/] View on GitHub: [link]{repoUrl}[/]");
+
+                // Check for merged branches to clean up
+                await CheckForMergedBranches(currentBranch);
             }
 
             return 0;
+        }
+
+        private async Task CheckForMergedBranches(string currentBranch)
+        {
+            await Task.Run(() =>
+            {
+                // Get merged branches (excluding current and main/master)
+                var mergedOutput = GitHelper.Run("branch --merged");
+                var mergedBranches = mergedOutput
+                    .Split('\n')
+                    .Select(b => b.Trim().TrimStart('*').Trim())
+                    .Where(b => !string.IsNullOrWhiteSpace(b) &&
+                                b != currentBranch &&
+                                b != "main" &&
+                                b != "master")
+                    .ToList();
+
+                if (!mergedBranches.Any())
+                {
+                    return; // No cleanup needed
+                }
+
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine($"[yellow]ℹ[/] Found {mergedBranches.Count} merged branch(es):");
+
+                foreach (var branch in mergedBranches)
+                {
+                    AnsiConsole.MarkupLine($"  [grey]•[/] [blue]{branch}[/]");
+                }
+
+                AnsiConsole.WriteLine();
+
+                foreach (var branch in mergedBranches)
+                {
+                    if (AnsiConsole.Confirm($"Delete [blue]{branch}[/] (local + remote)?", true))
+                    {
+                        // Delete local branch
+                        var localResult = GitHelper.Run($"branch -d {branch}");
+                        if (localResult.Contains("Deleted branch"))
+                        {
+                            AnsiConsole.MarkupLine($"  [green]✓[/] Deleted local branch [grey]{branch}[/]");
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine($"  [yellow]⚠[/] Could not delete local: {localResult}");
+                        }
+
+                        // Delete remote branch
+                        var remoteResult = GitHelper.Run($"push origin --delete {branch}");
+                        if (remoteResult.Contains("deleted") || remoteResult.Contains("remote ref does not exist"))
+                        {
+                            AnsiConsole.MarkupLine($"  [green]✓[/] Deleted remote branch [grey]origin/{branch}[/]");
+                        }
+                        else if (remoteResult.Contains("error") || remoteResult.Contains("fatal"))
+                        {
+                            // Remote branch might not exist, that's okay
+                            if (!remoteResult.Contains("remote ref does not exist"))
+                            {
+                                AnsiConsole.MarkupLine($"  [grey]Note: Remote branch may not exist[/]");
+                            }
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine($"  [grey]Note: {remoteResult}[/]");
+                        }
+                    }
+                }
+            });
         }
 
         private async Task<int> HandleNewRepoFlow()

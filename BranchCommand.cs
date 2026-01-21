@@ -290,10 +290,11 @@ namespace GitBuddy
         {
             await Task.Run(() =>
             {
+                var currentBranch = GitHelper.Run("branch --show-current");
+
                 if (string.IsNullOrWhiteSpace(name))
                 {
-                    // Interactive selection
-                    var currentBranch = GitHelper.Run("branch --show-current");
+                    // Interactive selection - include ALL branches including current
                     var branchOutput = GitHelper.Run("branch");
 
                     if (string.IsNullOrWhiteSpace(branchOutput))
@@ -305,12 +306,12 @@ namespace GitBuddy
                     var branches = branchOutput
                         .Split('\n')
                         .Select(b => b.Trim().TrimStart('*').Trim())
-                        .Where(b => !string.IsNullOrWhiteSpace(b) && b != currentBranch)
+                        .Where(b => !string.IsNullOrWhiteSpace(b))
                         .ToList();
 
                     if (!branches.Any())
                     {
-                        AnsiConsole.MarkupLine("[yellow]No other branches to delete.[/]");
+                        AnsiConsole.MarkupLine("[yellow]No branches to delete.[/]");
                         return;
                     }
 
@@ -318,6 +319,47 @@ namespace GitBuddy
                         new SelectionPrompt<string>()
                             .Title("Which branch do you want to [red]delete[/]?")
                             .AddChoices(branches));
+                }
+
+                // Check if deleting current branch
+                bool isDeletingCurrent = name == currentBranch;
+
+                if (isDeletingCurrent)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]ℹ[/] You're currently on [blue]{name}[/]");
+
+                    // Find a branch to switch to (prefer master/main)
+                    var allBranches = GitHelper.Run("branch")
+                        .Split('\n')
+                        .Select(b => b.Trim().TrimStart('*').Trim())
+                        .Where(b => !string.IsNullOrWhiteSpace(b) && b != currentBranch)
+                        .ToList();
+
+                    if (!allBranches.Any())
+                    {
+                        AnsiConsole.MarkupLine("[red]✗[/] Cannot delete the only branch.");
+                        return;
+                    }
+
+                    string targetBranch = allBranches.Contains("master") ? "master" :
+                                         allBranches.Contains("main") ? "main" :
+                                         allBranches.First();
+
+                    if (!AnsiConsole.Confirm($"Switch to [blue]{targetBranch}[/] first?", true))
+                    {
+                        AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                        return;
+                    }
+
+                    // Switch to target branch
+                    var switchResult = GitHelper.Run($"checkout {targetBranch}");
+                    if (switchResult.Contains("error:") || switchResult.Contains("fatal:"))
+                    {
+                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult}");
+                        return;
+                    }
+
+                    AnsiConsole.MarkupLine($"[green]✓[/] Switched to [blue]{targetBranch}[/]");
                 }
 
                 // Confirm deletion
