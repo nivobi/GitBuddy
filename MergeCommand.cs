@@ -101,11 +101,10 @@ namespace GitBuddy
                 var branches = branchOutput
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
-                    .Where(b => !string.IsNullOrWhiteSpace(b) &&
-                                b != currentBranch &&
-                                !b.Contains("HEAD ->"))
+                    .Where(b => !string.IsNullOrWhiteSpace(b) && !b.Contains("HEAD ->"))
                     .Select(b => b.Replace("remotes/origin/", ""))
                     .Distinct()
+                    .Where(b => b != currentBranch)  // Filter current branch AFTER cleaning names
                     .OrderBy(b => b)
                     .ToList();
 
