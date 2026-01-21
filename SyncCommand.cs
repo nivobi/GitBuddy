@@ -36,10 +36,22 @@ namespace GitBuddy
                 return 1;
             }
 
+            // Get remote URL for display
+            string remoteUrl = GitHelper.Run("remote get-url origin");
+            string repoDisplay = remoteUrl.Replace("https://github.com/", "").Replace(".git", "").Trim();
+            if (repoDisplay.Contains("git@github.com:"))
+            {
+                repoDisplay = repoDisplay.Replace("git@github.com:", "");
+            }
+
+            AnsiConsole.MarkupLine($"[grey]Branch:[/] [blue]{currentBranch}[/]");
+            AnsiConsole.MarkupLine($"[grey]Remote:[/] [blue]{repoDisplay}[/]");
+            AnsiConsole.WriteLine();
+
             await AnsiConsole.Status().StartAsync("Syncing with GitHub...", async ctx =>
             {
                 await Task.Run(() => {
-                    ctx.Status("Checking connection...");
+                    ctx.Status($"Checking connection to {repoDisplay}...");
                     // Test the remote connection by trying to fetch
                     string testResult = GitHelper.Run("ls-remote origin");
 
@@ -50,13 +62,14 @@ namespace GitBuddy
                         return;
                     }
 
-                    ctx.Status($"Pulling latest from {currentBranch}...");
+                    ctx.Status($"Pulling latest changes from origin/{currentBranch}...");
                     // Try to pull, but don't fail if the branch doesn't exist on remote yet
                     string pullOutput = GitHelper.Run($"pull origin {currentBranch} --rebase");
 
                     // It's okay if pull fails because the branch doesn't exist remotely yet
-                    if (pullOutput.Contains("fatal") &&
-                        !pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase))
+                    bool isNewBranch = pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase);
+
+                    if (pullOutput.Contains("fatal") && !isNewBranch)
                     {
                         // This is a real error, not just "branch doesn't exist yet"
                         syncFailed = true;
@@ -64,7 +77,15 @@ namespace GitBuddy
                         return;
                     }
 
-                    ctx.Status($"Pushing {currentBranch}...");
+                    if (isNewBranch)
+                    {
+                        ctx.Status($"Creating new branch {currentBranch} on GitHub...");
+                    }
+                    else
+                    {
+                        ctx.Status($"Pushing changes to origin/{currentBranch}...");
+                    }
+
                     string pushOutput = GitHelper.Run($"push -u origin {currentBranch}");
 
                     if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
@@ -90,7 +111,12 @@ namespace GitBuddy
             }
             else
             {
-                AnsiConsole.MarkupLine("[green]✔ Sync Complete![/]");
+                AnsiConsole.MarkupLine($"[green]✔ Sync Complete![/]");
+                AnsiConsole.MarkupLine($"[grey]→[/] [blue]{currentBranch}[/] is now synced with [blue]{repoDisplay}[/]");
+
+                // Show GitHub URL
+                string repoUrl = $"https://github.com/{repoDisplay}";
+                AnsiConsole.MarkupLine($"[grey]→[/] View on GitHub: [link]{repoUrl}[/]");
             }
 
             return 0;
