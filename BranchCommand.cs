@@ -148,13 +148,14 @@ namespace GitBuddy
                 {
                     var result = GitHelper.Run($"checkout {selectedBranch}");
 
-                    if (result.Contains("Switched to") || result.Contains("Already on"))
+                    // Check for actual errors rather than specific success messages
+                    if (result.Contains("error:") || result.Contains("fatal:"))
                     {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Switched to branch [blue]{selectedBranch}[/]");
+                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {result}");
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {result}");
+                        AnsiConsole.MarkupLine($"[green]✓[/] Switched to branch [blue]{selectedBranch}[/]");
                     }
                 });
             });
