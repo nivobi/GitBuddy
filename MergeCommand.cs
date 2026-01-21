@@ -11,12 +11,12 @@ namespace GitBuddy
         public class Settings : CommandSettings
         {
             [CommandArgument(0, "[branch]")]
-            [Description("Branch to merge from (interactive if not specified)")]
+            [Description("Branch name - source in normal mode, target in --into mode")]
             public string? Branch { get; set; }
 
             [CommandOption("--into")]
-            [Description("Merge current branch into target (interactive if no value)")]
-            public string? Into { get; set; }
+            [Description("Reverse merge: merge current branch into target (interactive if branch not specified)")]
+            public bool Into { get; set; }
 
             [CommandOption("--ai")]
             [Description("Use AI to generate merge commit message")]
@@ -45,13 +45,13 @@ namespace GitBuddy
             string targetBranch;
 
             // Determine merge direction based on --into flag
-            if (settings.Into != null)
+            if (settings.Into)
             {
                 // --into mode: merge current branch INTO another branch
                 sourceBranch = currentBranch;
 
-                // If --into has no value, interactively select target
-                if (string.IsNullOrWhiteSpace(settings.Into))
+                // If branch argument not provided, interactively select target
+                if (string.IsNullOrWhiteSpace(settings.Branch))
                 {
                     targetBranch = await SelectBranch(currentBranch, $"Which branch do you want to merge [blue]{currentBranch}[/] into?");
                     if (string.IsNullOrWhiteSpace(targetBranch))
@@ -61,7 +61,7 @@ namespace GitBuddy
                 }
                 else
                 {
-                    targetBranch = settings.Into;
+                    targetBranch = settings.Branch;
                 }
             }
             else
@@ -69,7 +69,7 @@ namespace GitBuddy
                 // Normal mode: merge another branch INTO current branch
                 targetBranch = currentBranch;
 
-                // Get branch to merge from
+                // If branch argument not provided, interactively select source
                 if (string.IsNullOrWhiteSpace(settings.Branch))
                 {
                     sourceBranch = await SelectBranch(currentBranch, "Which branch do you want to [green]merge[/]?");
@@ -227,13 +227,18 @@ namespace GitBuddy
         {
             string mergeResult = "";
             bool hasConflicts = false;
+            bool wasFastForward = false;
+
+            // Use --no-commit if AI is requested so we can generate a custom message
+            string mergeFlags = useAi ? "--no-commit --no-ff" : "--no-edit";
 
             await AnsiConsole.Status().StartAsync("Merging...", async ctx =>
             {
                 await Task.Run(() =>
                 {
-                    mergeResult = GitHelper.Run($"merge {branchToMerge} --no-edit");
+                    mergeResult = GitHelper.Run($"merge {branchToMerge} {mergeFlags}");
                     hasConflicts = mergeResult.Contains("CONFLICT") || mergeResult.Contains("Automatic merge failed");
+                    wasFastForward = mergeResult.Contains("Fast-forward") && !useAi;
                 });
             });
 
@@ -242,20 +247,55 @@ namespace GitBuddy
                 return await HandleConflicts(branchToMerge);
             }
 
-            // Check if it was a fast-forward merge
-            bool wasFastForward = mergeResult.Contains("Fast-forward");
-
+            // If fast-forward and not using AI, we're done
             if (wasFastForward)
             {
                 AnsiConsole.MarkupLine($"[green]✓ Fast-forward merge complete![/]");
                 AnsiConsole.MarkupLine($"[grey]{mergeResult}[/]");
             }
+            else if (useAi)
+            {
+                // Generate AI commit message
+                string? aiMessage = await GenerateAiMergeMessage(branchToMerge, currentBranch);
+
+                if (!string.IsNullOrWhiteSpace(aiMessage))
+                {
+                    // Show AI suggestion
+                    AnsiConsole.Write(new Panel(new Text(aiMessage, new Style(Color.Blue)))
+                        .Header("AI Merge Message")
+                        .BorderColor(Color.Blue));
+
+                    var choice = AnsiConsole.Prompt(
+                        new SelectionPrompt<string>()
+                            .AddChoices(new[] { "✔ Accept", "✎ Edit", "✖ Cancel" }));
+
+                    if (choice == "✖ Cancel")
+                    {
+                        GitHelper.Run("merge --abort");
+                        AnsiConsole.MarkupLine("[red]Merge cancelled.[/]");
+                        return 0;
+                    }
+
+                    if (choice == "✎ Edit")
+                    {
+                        aiMessage = AnsiConsole.Ask<string>("Edit message:", aiMessage);
+                    }
+
+                    // Commit with the AI message
+                    GitHelper.Run($"commit -m \"{aiMessage.Replace("\"", "\\\"")}\"");
+                    AnsiConsole.MarkupLine($"[green]✓ Merge complete with AI-generated message![/]");
+                }
+                else
+                {
+                    // Fallback: commit with default message
+                    GitHelper.Run($"commit --no-edit");
+                    AnsiConsole.MarkupLine($"[green]✓ Merge complete![/]");
+                    AnsiConsole.MarkupLine("[grey]AI message generation failed, used default message.[/]");
+                }
+            }
             else
             {
                 AnsiConsole.MarkupLine($"[green]✓ Merge complete![/]");
-
-                // If AI was requested and there's a merge commit, we could regenerate the message
-                // but git has already created it, so we'll just show it
                 var lastCommit = GitHelper.Run("log -1 --pretty=%B");
                 AnsiConsole.MarkupLine($"[grey]Merge commit:[/] {lastCommit}");
             }
@@ -265,6 +305,47 @@ namespace GitBuddy
             AnsiConsole.MarkupLine($"[grey]Next:[/] Run [blue]buddy sync[/] to push changes and clean up merged branches.");
 
             return 0;
+        }
+
+        private async Task<string?> GenerateAiMergeMessage(string sourceBranch, string targetBranch)
+        {
+            try
+            {
+                var (provider, model, apiKey) = ConfigManager.LoadConfig();
+
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    AnsiConsole.MarkupLine("[yellow]⚠[/] AI Key missing. Run [yellow]buddy config[/] first.");
+                    return null;
+                }
+
+                // Get the diff of what's being merged
+                string diff = GitHelper.Run($"diff {targetBranch}...{sourceBranch}");
+
+                if (string.IsNullOrWhiteSpace(diff))
+                {
+                    return null;
+                }
+
+                // Get list of commits being merged
+                string commits = GitHelper.Run($"log {targetBranch}..{sourceBranch} --oneline");
+
+                string context = $"Commits being merged:\n{commits}\n\nChanges:\n{diff}";
+
+                string? aiMessage = null;
+
+                await AnsiConsole.Status().StartAsync("[blue]AI is generating merge message...[/]", async ctx =>
+                {
+                    aiMessage = await AiHelper.GenerateCommitMessage(context);
+                });
+
+                return aiMessage;
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[yellow]⚠[/] AI generation failed: {ex.Message}");
+                return null;
+            }
         }
 
         private async Task<int> HandleConflicts(string branchToMerge)
