@@ -35,6 +35,9 @@ namespace GitBuddy
                 config.AddCommand<BranchCommand>("branch")
                     .WithDescription("Smart branch management (create, switch, list, clean).");
 
+                config.AddCommand<MergeCommand>("merge")
+                    .WithDescription("Merge branches with conflict detection and AI-powered messages.");
+
                 config.AddCommand<UndoCommand>("undo")
                     .WithDescription("Go back in time (safely).");
 
