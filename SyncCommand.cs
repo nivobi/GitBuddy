@@ -55,15 +55,13 @@ namespace GitBuddy
                     string pullOutput = GitHelper.Run($"pull origin {currentBranch} --rebase");
 
                     // It's okay if pull fails because the branch doesn't exist remotely yet
-                    if (!pullOutput.Contains("Couldn't find remote ref"))
+                    if (pullOutput.Contains("fatal") &&
+                        !pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Check for actual pull errors (not "branch doesn't exist")
-                        if (pullOutput.Contains("fatal") && !pullOutput.Contains("Couldn't find remote ref"))
-                        {
-                            syncFailed = true;
-                            errorDetails = pullOutput;
-                            return;
-                        }
+                        // This is a real error, not just "branch doesn't exist yet"
+                        syncFailed = true;
+                        errorDetails = pullOutput;
+                        return;
                     }
 
                     ctx.Status($"Pushing {currentBranch}...");
