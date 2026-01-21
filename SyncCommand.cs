@@ -159,8 +159,9 @@ namespace GitBuddy
                 {
                     if (AnsiConsole.Confirm($"Delete [blue]{branch}[/] (local + remote)?", true))
                     {
-                        // Delete local branch
-                        var localResult = GitHelper.Run($"branch -d {branch}");
+                        // Delete local branch - use -D since we already verified it's merged to HEAD
+                        // The -d flag checks remote tracking which may not be updated yet
+                        var localResult = GitHelper.Run($"branch -D {branch}");
                         if (localResult.Contains("Deleted branch"))
                         {
                             AnsiConsole.MarkupLine($"  [green]✓[/] Deleted local branch [grey]{branch}[/]");
