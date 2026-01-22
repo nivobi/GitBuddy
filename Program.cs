@@ -38,6 +38,9 @@ namespace GitBuddy
                 config.AddCommand<MergeCommand>("merge")
                     .WithDescription("Merge branches with conflict detection and AI-powered messages.");
 
+                config.AddCommand<StashCommand>("stash")
+                    .WithDescription("Manage stashes (push, pop, apply, list).");
+
                 config.AddCommand<UndoCommand>("undo")
                     .WithDescription("Go back in time (safely).");
 
