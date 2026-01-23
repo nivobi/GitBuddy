@@ -3,8 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Git
 {
     public class BranchCommand : AsyncCommand<BranchCommand.Settings>
     {
@@ -49,7 +50,7 @@ namespace GitBuddy
 
         private static bool IsGitRepository()
         {
-            var result = GitHelper.Run("rev-parse --is-inside-work-tree");
+            var result = GitService.Run("rev-parse --is-inside-work-tree");
             return result.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -82,7 +83,7 @@ namespace GitBuddy
             {
                 AnsiConsole.Status().Start($"Creating branch [blue]{fullBranchName}[/]...", ctx =>
                 {
-                    var result = GitHelper.Run($"checkout -b {fullBranchName}");
+                    var result = GitService.Run($"checkout -b {fullBranchName}");
 
                     if (result.Contains("Switched to a new branch") || result.Contains("switched to a new branch"))
                     {
@@ -103,7 +104,7 @@ namespace GitBuddy
             await Task.Run(() =>
             {
                 // Get all branches
-                var branchOutput = GitHelper.Run("branch -a");
+                var branchOutput = GitService.Run("branch -a");
                 if (string.IsNullOrWhiteSpace(branchOutput))
                 {
                     AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
@@ -134,7 +135,7 @@ namespace GitBuddy
                         .AddChoices(branches));
 
                 // Check for uncommitted changes first
-                var statusCheck = GitHelper.Run("status --porcelain");
+                var statusCheck = GitService.Run("status --porcelain");
                 if (!string.IsNullOrWhiteSpace(statusCheck))
                 {
                     AnsiConsole.MarkupLine("[yellow]⚠[/] You have uncommitted changes.");
@@ -146,7 +147,7 @@ namespace GitBuddy
                 // Switch to selected branch
                 AnsiConsole.Status().Start($"Switching to [blue]{selectedBranch}[/]...", ctx =>
                 {
-                    var result = GitHelper.Run($"checkout {selectedBranch}");
+                    var result = GitService.Run($"checkout {selectedBranch}");
 
                     // Check for actual errors rather than specific success messages
                     if (result.Contains("error:") || result.Contains("fatal:"))
@@ -167,8 +168,8 @@ namespace GitBuddy
         {
             await Task.Run(() =>
             {
-                var currentBranch = GitHelper.Run("branch --show-current");
-                var branchOutput = GitHelper.Run("branch -vv");
+                var currentBranch = GitService.Run("branch --show-current");
+                var branchOutput = GitService.Run("branch -vv");
 
                 if (string.IsNullOrWhiteSpace(branchOutput))
                 {
@@ -224,10 +225,10 @@ namespace GitBuddy
                 AnsiConsole.MarkupLine("[blue]Checking for merged branches...[/]");
 
                 // Get current branch
-                var currentBranch = GitHelper.Run("branch --show-current");
+                var currentBranch = GitService.Run("branch --show-current");
 
                 // Get merged branches (excluding current and main/master)
-                var mergedOutput = GitHelper.Run("branch --merged");
+                var mergedOutput = GitService.Run("branch --merged");
                 var mergedBranches = mergedOutput
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
@@ -268,7 +269,7 @@ namespace GitBuddy
                 var deletedCount = 0;
                 foreach (var branch in mergedBranches)
                 {
-                    var result = GitHelper.Run($"branch -d {branch}");
+                    var result = GitService.Run($"branch -d {branch}");
                     if (result.Contains("Deleted branch"))
                     {
                         AnsiConsole.MarkupLine($"[green]✓[/] Deleted [grey]{branch}[/]");
@@ -290,12 +291,12 @@ namespace GitBuddy
         {
             await Task.Run(() =>
             {
-                var currentBranch = GitHelper.Run("branch --show-current");
+                var currentBranch = GitService.Run("branch --show-current");
 
                 if (string.IsNullOrWhiteSpace(name))
                 {
                     // Interactive selection - include ALL branches including current
-                    var branchOutput = GitHelper.Run("branch");
+                    var branchOutput = GitService.Run("branch");
 
                     if (string.IsNullOrWhiteSpace(branchOutput))
                     {
@@ -329,7 +330,7 @@ namespace GitBuddy
                     AnsiConsole.MarkupLine($"[yellow]ℹ[/] You're currently on [blue]{name}[/]");
 
                     // Find a branch to switch to (prefer master/main)
-                    var allBranches = GitHelper.Run("branch")
+                    var allBranches = GitService.Run("branch")
                         .Split('\n')
                         .Select(b => b.Trim().TrimStart('*').Trim())
                         .Where(b => !string.IsNullOrWhiteSpace(b) && b != currentBranch)
@@ -352,7 +353,7 @@ namespace GitBuddy
                     }
 
                     // Switch to target branch
-                    var switchResult = GitHelper.Run($"checkout {targetBranch}");
+                    var switchResult = GitService.Run($"checkout {targetBranch}");
                     if (switchResult.Contains("error:") || switchResult.Contains("fatal:"))
                     {
                         AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult}");
@@ -370,7 +371,7 @@ namespace GitBuddy
                 }
 
                 // Try safe delete first (-d), which prevents deleting unmerged branches
-                var result = GitHelper.Run($"branch -d {name}");
+                var result = GitService.Run($"branch -d {name}");
 
                 if (result.Contains("Deleted branch"))
                 {
@@ -382,7 +383,7 @@ namespace GitBuddy
 
                     if (AnsiConsole.Confirm("Force delete anyway? [red](You may lose commits!)[/]", false))
                     {
-                        result = GitHelper.Run($"branch -D {name}");
+                        result = GitService.Run($"branch -D {name}");
                         if (result.Contains("Deleted branch"))
                         {
                             AnsiConsole.MarkupLine($"[green]✓[/] Force deleted branch [grey]{name}[/]");
@@ -406,7 +407,7 @@ namespace GitBuddy
         {
             await Task.Run(() =>
             {
-                var currentBranch = GitHelper.Run("branch --show-current");
+                var currentBranch = GitService.Run("branch --show-current");
 
                 // If no old name specified, assume renaming current branch
                 if (string.IsNullOrWhiteSpace(oldName))
@@ -424,7 +425,7 @@ namespace GitBuddy
                 bool isCurrentBranch = oldName == currentBranch;
 
                 string moveFlag = isCurrentBranch ? "-m" : "-m";
-                var result = GitHelper.Run($"branch {moveFlag} {oldName} {newName}");
+                var result = GitService.Run($"branch {moveFlag} {oldName} {newName}");
 
                 if (result.Contains("Renamed") || result.Contains("renamed") || string.IsNullOrWhiteSpace(result))
                 {

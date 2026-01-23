@@ -5,8 +5,9 @@ using Spectre.Console.Cli;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Git
 {
     public class SyncCommand : AsyncCommand<SyncCommand.Settings>
     {
@@ -17,7 +18,7 @@ namespace GitBuddy
             AnsiConsole.Write(new Rule("[blue]Cloud Sync[/]"));
 
             // 1. Check if a remote is linked
-            string remotes = GitHelper.Run("remote");
+            string remotes = GitService.Run("remote");
             
             if (string.IsNullOrWhiteSpace(remotes))
             {
@@ -29,7 +30,7 @@ namespace GitBuddy
             string errorDetails = "";
 
             // Get current branch name
-            string currentBranch = GitHelper.Run("branch --show-current");
+            string currentBranch = GitService.Run("branch --show-current");
             if (string.IsNullOrWhiteSpace(currentBranch))
             {
                 AnsiConsole.MarkupLine("[red]✗[/] Could not determine current branch.");
@@ -37,7 +38,7 @@ namespace GitBuddy
             }
 
             // Get remote URL for display
-            string remoteUrl = GitHelper.Run("remote get-url origin");
+            string remoteUrl = GitService.Run("remote get-url origin");
             string repoDisplay = remoteUrl.Replace("https://github.com/", "").Replace(".git", "").Trim();
             if (repoDisplay.Contains("git@github.com:"))
             {
@@ -53,7 +54,7 @@ namespace GitBuddy
                 await Task.Run(() => {
                     ctx.Status($"Checking connection to {repoDisplay}...");
                     // Test the remote connection by trying to fetch
-                    string testResult = GitHelper.Run("ls-remote origin");
+                    string testResult = GitService.Run("ls-remote origin");
 
                     if (testResult.Contains("not found") || testResult.Contains("fatal"))
                     {
@@ -64,7 +65,7 @@ namespace GitBuddy
 
                     ctx.Status($"Pulling latest changes from origin/{currentBranch}...");
                     // Try to pull, but don't fail if the branch doesn't exist on remote yet
-                    string pullOutput = GitHelper.Run($"pull origin {currentBranch} --rebase");
+                    string pullOutput = GitService.Run($"pull origin {currentBranch} --rebase");
 
                     // It's okay if pull fails because the branch doesn't exist remotely yet
                     bool isNewBranch = pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase);
@@ -86,7 +87,7 @@ namespace GitBuddy
                         ctx.Status($"Pushing changes to origin/{currentBranch}...");
                     }
 
-                    string pushOutput = GitHelper.Run($"push -u origin {currentBranch}");
+                    string pushOutput = GitService.Run($"push -u origin {currentBranch}");
 
                     if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
                     {
@@ -104,7 +105,7 @@ namespace GitBuddy
                 {
                     if (AnsiConsole.Confirm("[yellow]The remote repository seems to be missing. Remove the dead link and re-create it?[/]"))
                     {
-                        GitHelper.Run("remote remove origin");
+                        GitService.Run("remote remove origin");
                         return await HandleNewRepoFlow();
                     }
                 }
@@ -130,7 +131,7 @@ namespace GitBuddy
             await Task.Run(() =>
             {
                 // Get merged branches (excluding current and main/master)
-                var mergedOutput = GitHelper.Run("branch --merged");
+                var mergedOutput = GitService.Run("branch --merged");
                 var mergedBranches = mergedOutput
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
@@ -161,7 +162,7 @@ namespace GitBuddy
                     {
                         // Delete local branch - use -D since we already verified it's merged to HEAD
                         // The -d flag checks remote tracking which may not be updated yet
-                        var localResult = GitHelper.Run($"branch -D {branch}");
+                        var localResult = GitService.Run($"branch -D {branch}");
                         if (localResult.Contains("Deleted branch"))
                         {
                             AnsiConsole.MarkupLine($"  [green]✓[/] Deleted local branch [grey]{branch}[/]");
@@ -172,7 +173,7 @@ namespace GitBuddy
                         }
 
                         // Delete remote branch
-                        var remoteResult = GitHelper.Run($"push origin --delete {branch}");
+                        var remoteResult = GitService.Run($"push origin --delete {branch}");
                         if (remoteResult.Contains("deleted") || remoteResult.Contains("remote ref does not exist"))
                         {
                             AnsiConsole.MarkupLine($"  [green]✓[/] Deleted remote branch [grey]origin/{branch}[/]");

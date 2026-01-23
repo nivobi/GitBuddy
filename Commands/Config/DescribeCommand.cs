@@ -4,8 +4,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Config
 {
     public class DescribeCommand : AsyncCommand<DescribeCommand.Settings>
     {
@@ -47,7 +48,7 @@ namespace GitBuddy
             // 2. Ask AI to describe the project authoritatively
             string? description = null;
             await AnsiConsole.Status().StartAsync("AI is architecting a summary...", async ctx => {
-                description = await AiHelper.DescribeProject(projectData);
+                description = await AiService.DescribeProject(projectData);
             });
 
             if (string.IsNullOrEmpty(description))

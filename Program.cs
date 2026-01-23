@@ -1,6 +1,9 @@
 ﻿using System.Reflection;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Commands.Git;
+using GitBuddy.Commands.Config;
+using GitBuddy.Commands.Utility;
 
 namespace GitBuddy
 {

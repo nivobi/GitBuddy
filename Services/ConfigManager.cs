@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace GitBuddy
+namespace GitBuddy.Services
 {
     public class AppConfig
     {

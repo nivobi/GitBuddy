@@ -3,8 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Git
 {
     public class StashCommand : AsyncCommand<StashCommand.Settings>
     {
@@ -51,7 +52,7 @@ namespace GitBuddy
 
         private static bool IsGitRepository()
         {
-            var result = GitHelper.Run("rev-parse --is-inside-work-tree");
+            var result = GitService.Run("rev-parse --is-inside-work-tree");
             return result.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -60,7 +61,7 @@ namespace GitBuddy
             return await Task.Run(() =>
             {
                 // Check if there are changes to stash
-                var statusCheck = GitHelper.Run("status --porcelain");
+                var statusCheck = GitService.Run("status --porcelain");
                 if (string.IsNullOrWhiteSpace(statusCheck))
                 {
                     AnsiConsole.MarkupLine("[yellow]⚠[/] No changes to stash.");
@@ -83,7 +84,7 @@ namespace GitBuddy
                 string result = "";
                 AnsiConsole.Status().Start("Stashing changes...", ctx =>
                 {
-                    result = GitHelper.Run(stashArgs);
+                    result = GitService.Run(stashArgs);
                 });
 
                 if (result.Contains("Saved working directory") || result.Contains("No local changes to save"))
@@ -114,7 +115,7 @@ namespace GitBuddy
         {
             return await Task.Run(() =>
             {
-                var stashOutput = GitHelper.Run("stash list");
+                var stashOutput = GitService.Run("stash list");
 
                 if (string.IsNullOrWhiteSpace(stashOutput))
                 {
@@ -194,7 +195,7 @@ namespace GitBuddy
             return await Task.Run(() =>
             {
                 // Check if there are any stashes
-                var stashOutput = GitHelper.Run("stash list");
+                var stashOutput = GitService.Run("stash list");
                 if (string.IsNullOrWhiteSpace(stashOutput))
                 {
                     AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
@@ -215,7 +216,7 @@ namespace GitBuddy
                 var stashRef = $"stash@{{{index.Value}}}";
 
                 // Verify stash exists
-                var verifyResult = GitHelper.Run($"stash list {stashRef}");
+                var verifyResult = GitService.Run($"stash list {stashRef}");
                 if (string.IsNullOrWhiteSpace(verifyResult))
                 {
                     AnsiConsole.MarkupLine($"[red]✗ Error:[/] Stash [blue]{stashRef}[/] does not exist.");
@@ -223,7 +224,7 @@ namespace GitBuddy
                 }
 
                 // Check for uncommitted changes
-                var statusCheck = GitHelper.Run("status --porcelain");
+                var statusCheck = GitService.Run("status --porcelain");
                 if (!string.IsNullOrWhiteSpace(statusCheck))
                 {
                     AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
@@ -245,7 +246,7 @@ namespace GitBuddy
                 string result = "";
                 AnsiConsole.Status().Start($"Popping [blue]{stashRef}[/]...", ctx =>
                 {
-                    result = GitHelper.Run($"stash pop {stashRef}");
+                    result = GitService.Run($"stash pop {stashRef}");
                 });
 
                 if (result.Contains("CONFLICT") || result.Contains("error:") || result.Contains("fatal:"))
@@ -273,7 +274,7 @@ namespace GitBuddy
             return await Task.Run(() =>
             {
                 // Check if there are any stashes
-                var stashOutput = GitHelper.Run("stash list");
+                var stashOutput = GitService.Run("stash list");
                 if (string.IsNullOrWhiteSpace(stashOutput))
                 {
                     AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
@@ -294,7 +295,7 @@ namespace GitBuddy
                 var stashRef = $"stash@{{{index.Value}}}";
 
                 // Verify stash exists
-                var verifyResult = GitHelper.Run($"stash list {stashRef}");
+                var verifyResult = GitService.Run($"stash list {stashRef}");
                 if (string.IsNullOrWhiteSpace(verifyResult))
                 {
                     AnsiConsole.MarkupLine($"[red]✗ Error:[/] Stash [blue]{stashRef}[/] does not exist.");
@@ -302,7 +303,7 @@ namespace GitBuddy
                 }
 
                 // Check for uncommitted changes (warning only)
-                var statusCheck = GitHelper.Run("status --porcelain");
+                var statusCheck = GitService.Run("status --porcelain");
                 if (!string.IsNullOrWhiteSpace(statusCheck))
                 {
                     AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
@@ -317,7 +318,7 @@ namespace GitBuddy
                 string result = "";
                 AnsiConsole.Status().Start($"Applying [blue]{stashRef}[/]...", ctx =>
                 {
-                    result = GitHelper.Run($"stash apply {stashRef}");
+                    result = GitService.Run($"stash apply {stashRef}");
                 });
 
                 if (result.Contains("CONFLICT") || result.Contains("error:") || result.Contains("fatal:"))
@@ -343,7 +344,7 @@ namespace GitBuddy
         {
             return await Task.Run(() =>
             {
-                var stashOutput = GitHelper.Run("stash list");
+                var stashOutput = GitService.Run("stash list");
                 if (string.IsNullOrWhiteSpace(stashOutput))
                 {
                     return (int?)null;

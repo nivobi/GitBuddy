@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.ComponentModel;
 using System.Threading;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Utility
 {
     public class UpdateCommand : Command<UpdateCommand.Settings>
     {

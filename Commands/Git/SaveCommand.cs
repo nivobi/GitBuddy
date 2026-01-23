@@ -3,8 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Git
 {
     public class SaveCommand : AsyncCommand<SaveCommand.Settings>
     {
@@ -19,7 +20,7 @@ namespace GitBuddy
         {
             // 1. Stage changes
             AnsiConsole.Status().Start("Staging files...", ctx => { 
-                GitHelper.Run("add ."); 
+                GitService.Run("add ."); 
             });
 
             string? commitMessage = null;
@@ -35,7 +36,7 @@ namespace GitBuddy
                 }
                 else
                 {
-                    string diff = GitHelper.Run("diff --cached");
+                    string diff = GitService.Run("diff --cached");
                     
                     if (string.IsNullOrWhiteSpace(diff))
                     {
@@ -44,7 +45,7 @@ namespace GitBuddy
                     else
                     {
                         await AnsiConsole.Status().StartAsync("[blue]AI is thinking...[/]", async ctx => {
-                            commitMessage = await AiHelper.GenerateCommitMessage(diff);
+                            commitMessage = await AiService.GenerateCommitMessage(diff);
                         });
                         
                         if (string.IsNullOrEmpty(commitMessage))
@@ -84,7 +85,7 @@ namespace GitBuddy
 
             // 4. Final Save
             AnsiConsole.MarkupLine("[grey]Saving...[/]");
-            string result = GitHelper.Run($"commit -m \"{commitMessage}\"");
+            string result = GitService.Run($"commit -m \"{commitMessage}\"");
             
             AnsiConsole.Write(new Panel(new Text(result))
                 .Header("✔ Work Saved")

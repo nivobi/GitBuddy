@@ -2,8 +2,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Config
 {
     public class ConfigCommand : AsyncCommand<ConfigCommand.Settings>
     {

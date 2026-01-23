@@ -7,9 +7,9 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Spectre.Console;
 
-namespace GitBuddy
+namespace GitBuddy.Services
 {
-    public static class AiHelper
+    public static class AiService
     {
         public static async Task<string?> GenerateCommitMessage(string diff)
         {

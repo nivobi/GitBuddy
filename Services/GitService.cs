@@ -1,8 +1,8 @@
 using System.Diagnostics;
 
-namespace GitBuddy
+namespace GitBuddy.Services
 {
-    public static class GitHelper
+    public static class GitService
     {
         public static string Run(string args, string fileName = "git")
         {

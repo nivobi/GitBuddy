@@ -3,8 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using GitBuddy.Services;
 
-namespace GitBuddy
+namespace GitBuddy.Commands.Git
 {
     public class SetupCommand : AsyncCommand<SetupCommand.Settings>
     {
@@ -15,7 +16,7 @@ namespace GitBuddy
             AnsiConsole.Write(new Rule("[yellow]GitBuddy Setup[/]"));
 
             // 1. Git Init
-            string initOutput = GitHelper.Run("init");
+            string initOutput = GitService.Run("init");
             AnsiConsole.MarkupLine(initOutput.Contains("Initialized") 
                 ? "[green]✔ Git repository initialized.[/]" 
                 : "[yellow]! Already a Git repository.[/]");
@@ -24,7 +25,7 @@ namespace GitBuddy
             if (!File.Exists(".gitignore"))
             {
                 AnsiConsole.MarkupLine("[grey]Creating .gitignore...[/]");
-                GitHelper.Run("new gitignore", "dotnet");
+                GitService.Run("new gitignore", "dotnet");
                 AnsiConsole.MarkupLine("[green]✔ Added .gitignore[/]");
             }
 
