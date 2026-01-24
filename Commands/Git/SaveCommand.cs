@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,14 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            // Check if we're in a git repository
+            if (!IsGitRepository())
+            {
+                AnsiConsole.MarkupLine("[red]✗ Error:[/] Not in a git repository.");
+                AnsiConsole.MarkupLine("[grey]Try running this command from inside a git repository.[/]");
+                return 1;
+            }
+
             // 1. Stage changes
             AnsiConsole.Status().Start("Staging files...", ctx => { 
                 GitService.Run("add ."); 
@@ -92,6 +101,12 @@ namespace GitBuddy.Commands.Git
                 .BorderColor(Color.Green));
 
             return 0;
+        }
+
+        private static bool IsGitRepository()
+        {
+            var result = GitService.Run("rev-parse --is-inside-work-tree");
+            return result.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
