@@ -11,6 +11,8 @@ namespace GitBuddy.Services
 {
     public static class AiService
     {
+        // Reuse a single HttpClient instance to prevent socket exhaustion
+        private static readonly HttpClient _httpClient = new HttpClient();
         public static async Task<string?> GenerateCommitMessage(string diff)
         {
             var (provider, model, apiKey) = ConfigManager.LoadConfig();
@@ -80,19 +82,23 @@ namespace GitBuddy.Services
 
         private static async Task<string?> SendAiRequest(string apiUrl, string provider, string apiKey, object requestData)
         {
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
-            
-            if (provider == "openrouter")
-            {
-                client.DefaultRequestHeaders.Add("HTTP-Referer", "http://localhost");
-                client.DefaultRequestHeaders.Add("X-Title", "GitBuddy");
-            }
-
-            try 
+            try
             {
                 string jsonContent = JsonSerializer.Serialize(requestData);
-                var response = await client.PostAsync(apiUrl, new StringContent(jsonContent, Encoding.UTF8, "application/json"));
+
+                // Create request with headers set per-request instead of on the client
+                using var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
+                request.Headers.Add("Authorization", $"Bearer {apiKey}");
+
+                if (provider == "openrouter")
+                {
+                    request.Headers.Add("HTTP-Referer", "http://localhost");
+                    request.Headers.Add("X-Title", "GitBuddy");
+                }
+
+                request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode) return null;
 
                 string responseString = await response.Content.ReadAsStringAsync();
