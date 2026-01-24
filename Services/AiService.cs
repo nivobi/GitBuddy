@@ -16,7 +16,11 @@ namespace GitBuddy.Services
         public static async Task<string?> GenerateCommitMessage(string diff)
         {
             var (provider, model, apiKey) = ConfigManager.LoadConfig();
-            if (string.IsNullOrEmpty(apiKey)) return null;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠ No AI configured.[/] Run [blue]buddy config[/] to set up AI features.");
+                return null;
+            }
 
             string projectContext = "a software project";
             if (File.Exists(".buddycontext")) projectContext = File.ReadAllText(".buddycontext").Trim();
@@ -45,7 +49,11 @@ namespace GitBuddy.Services
         public static async Task<string?> DescribeProject(string projectData)
         {
             var (provider, model, apiKey) = ConfigManager.LoadConfig();
-            if (string.IsNullOrEmpty(apiKey)) return null;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠ No AI configured.[/] Run [blue]buddy config[/] to set up AI features.");
+                return null;
+            }
 
             string apiUrl = GetApiUrl(provider);
 
@@ -99,13 +107,52 @@ namespace GitBuddy.Services
                 request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
                 var response = await _httpClient.SendAsync(request);
-                if (!response.IsSuccessStatusCode) return null;
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorBody = await response.Content.ReadAsStringAsync();
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ AI Error:[/] Invalid API key. Run [yellow]buddy config[/] to update your credentials.");
+                    }
+                    else if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        AnsiConsole.MarkupLine("[red]✗ AI Error:[/] Rate limit exceeded. Please try again in a few moments.");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"[red]✗ AI Error:[/] {provider} API returned {response.StatusCode}");
+                        if (!string.IsNullOrWhiteSpace(errorBody) && errorBody.Length < 200)
+                        {
+                            AnsiConsole.MarkupLine($"[grey]Details: {errorBody.EscapeMarkup()}[/]");
+                        }
+                    }
+                    return null;
+                }
 
                 string responseString = await response.Content.ReadAsStringAsync();
                 using JsonDocument doc = JsonDocument.Parse(responseString);
                 return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()?.Trim();
             }
-            catch { return null; }
+            catch (HttpRequestException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]✗ Network Error:[/] Unable to connect to {provider}. Check your internet connection.");
+                AnsiConsole.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
+                return null;
+            }
+            catch (JsonException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]✗ AI Error:[/] Received invalid response from {provider}.");
+                AnsiConsole.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[red]✗ Unexpected Error:[/] {ex.Message.EscapeMarkup()}");
+                AnsiConsole.MarkupLine("[grey]Please report this issue if it persists.[/]");
+                return null;
+            }
         }
     }
 }
