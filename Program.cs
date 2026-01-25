@@ -22,13 +22,13 @@ namespace GitBuddy
             // Register infrastructure services
             services.AddSingleton<IFileSystem, FileSystem>();
             services.AddSingleton<IProcessRunner, ProcessRunner>();
-            services.AddSingleton<HttpClient>();
+            services.AddHttpClient<IAiService, AiService>();
             services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
 
             // Register application services
             services.AddSingleton<IConfigManager, ConfigManager>();
             services.AddSingleton<IGitService, GitService>();
-            services.AddSingleton<IAiService, AiService>();
+            // IAiService is registered via AddHttpClient above
 
             // Create registrar and app
             var registrar = new TypeRegistrar(services);

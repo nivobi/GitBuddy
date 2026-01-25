@@ -25,11 +25,12 @@ namespace GitBuddy.Commands.Git
             AnsiConsole.Write(new Rule("[blue]Cloud Sync[/]"));
 
             // 1. Check if a remote is linked
-            string remotes = _gitService.Run("remote");
-            
+            var remotesResult = await _gitService.RunAsync("remote", cancellationToken);
+            string remotes = remotesResult.Output;
+
             if (string.IsNullOrWhiteSpace(remotes))
             {
-                return await HandleNewRepoFlow();
+                return await HandleNewRepoFlow(cancellationToken);
             }
 
             // 2. Standard Sync Flow with Error Handling
@@ -37,7 +38,8 @@ namespace GitBuddy.Commands.Git
             string errorDetails = "";
 
             // Get current branch name
-            string currentBranch = _gitService.Run("branch --show-current");
+            var branchResult = await _gitService.RunAsync("branch --show-current", cancellationToken);
+            string currentBranch = branchResult.Output;
             if (string.IsNullOrWhiteSpace(currentBranch))
             {
                 AnsiConsole.MarkupLine("[red]✗[/] Could not determine current branch.");
@@ -45,7 +47,8 @@ namespace GitBuddy.Commands.Git
             }
 
             // Get remote URL for display
-            string remoteUrl = _gitService.Run("remote get-url origin");
+            var urlResult = await _gitService.RunAsync("remote get-url origin", cancellationToken);
+            string remoteUrl = urlResult.Output;
             string repoDisplay = remoteUrl.Replace("https://github.com/", "").Replace(".git", "").Trim();
             if (repoDisplay.Contains("git@github.com:"))
             {
@@ -58,50 +61,50 @@ namespace GitBuddy.Commands.Git
 
             await AnsiConsole.Status().StartAsync("Syncing with GitHub...", async ctx =>
             {
-                await Task.Run(() => {
-                    ctx.Status($"Checking connection to {repoDisplay}...");
-                    // Test the remote connection by trying to fetch
-                    string testResult = _gitService.Run("ls-remote origin");
+                ctx.Status($"Checking connection to {repoDisplay}...");
+                // Test the remote connection by trying to fetch
+                var testResult = await _gitService.RunAsync("ls-remote origin", cancellationToken);
 
-                    if (testResult.Contains("not found") || testResult.Contains("fatal"))
-                    {
-                        syncFailed = true;
-                        errorDetails = testResult;
-                        return;
-                    }
+                if (testResult.Output.Contains("not found") || testResult.Output.Contains("fatal"))
+                {
+                    syncFailed = true;
+                    errorDetails = testResult.Output;
+                    return;
+                }
 
-                    ctx.Status($"Pulling latest changes from origin/{currentBranch}...");
-                    // Try to pull, but don't fail if the branch doesn't exist on remote yet
-                    string pullOutput = _gitService.Run($"pull origin {currentBranch} --rebase");
+                ctx.Status($"Pulling latest changes from origin/{currentBranch}...");
+                // Try to pull, but don't fail if the branch doesn't exist on remote yet
+                var pullResult = await _gitService.RunAsync($"pull origin {currentBranch} --rebase", cancellationToken);
+                string pullOutput = pullResult.Output;
 
-                    // It's okay if pull fails because the branch doesn't exist remotely yet
-                    bool isNewBranch = pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase);
+                // It's okay if pull fails because the branch doesn't exist remotely yet
+                bool isNewBranch = pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase);
 
-                    if (pullOutput.Contains("fatal") && !isNewBranch)
-                    {
-                        // This is a real error, not just "branch doesn't exist yet"
-                        syncFailed = true;
-                        errorDetails = pullOutput;
-                        return;
-                    }
+                if (pullOutput.Contains("fatal") && !isNewBranch)
+                {
+                    // This is a real error, not just "branch doesn't exist yet"
+                    syncFailed = true;
+                    errorDetails = pullOutput;
+                    return;
+                }
 
-                    if (isNewBranch)
-                    {
-                        ctx.Status($"Creating new branch {currentBranch} on GitHub...");
-                    }
-                    else
-                    {
-                        ctx.Status($"Pushing changes to origin/{currentBranch}...");
-                    }
+                if (isNewBranch)
+                {
+                    ctx.Status($"Creating new branch {currentBranch} on GitHub...");
+                }
+                else
+                {
+                    ctx.Status($"Pushing changes to origin/{currentBranch}...");
+                }
 
-                    string pushOutput = _gitService.Run($"push -u origin {currentBranch}");
+                var pushResult = await _gitService.RunAsync($"push -u origin {currentBranch}", cancellationToken);
+                string pushOutput = pushResult.Output;
 
-                    if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
-                    {
-                        syncFailed = true;
-                        errorDetails = pushOutput;
-                    }
-                });
+                if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
+                {
+                    syncFailed = true;
+                    errorDetails = pushOutput;
+                }
             });
 
             if (syncFailed)
@@ -112,8 +115,8 @@ namespace GitBuddy.Commands.Git
                 {
                     if (AnsiConsole.Confirm("[yellow]The remote repository seems to be missing. Remove the dead link and re-create it?[/]"))
                     {
-                        _gitService.Run("remote remove origin");
-                        return await HandleNewRepoFlow();
+                        await _gitService.RunAsync("remote remove origin", cancellationToken);
+                        return await HandleNewRepoFlow(cancellationToken);
                     }
                 }
             }
@@ -127,82 +130,80 @@ namespace GitBuddy.Commands.Git
                 AnsiConsole.MarkupLine($"[grey]→[/] View on GitHub: [link]{repoUrl}[/]");
 
                 // Check for merged branches to clean up
-                await CheckForMergedBranches(currentBranch);
+                await CheckForMergedBranches(currentBranch, cancellationToken);
             }
 
             return 0;
         }
 
-        private async Task CheckForMergedBranches(string currentBranch)
+        private async Task CheckForMergedBranches(string currentBranch, CancellationToken cancellationToken)
         {
-            await Task.Run(() =>
+            // Get merged branches (excluding current and main/master)
+            var mergedResult = await _gitService.RunAsync("branch --merged", cancellationToken);
+            var mergedOutput = mergedResult.Output;
+            var mergedBranches = mergedOutput
+                .Split('\n')
+                .Select(b => b.Trim().TrimStart('*').Trim())
+                .Where(b => !string.IsNullOrWhiteSpace(b) &&
+                            b != currentBranch &&
+                            b != "main" &&
+                            b != "master")
+                .ToList();
+
+            if (!mergedBranches.Any())
             {
-                // Get merged branches (excluding current and main/master)
-                var mergedOutput = _gitService.Run("branch --merged");
-                var mergedBranches = mergedOutput
-                    .Split('\n')
-                    .Select(b => b.Trim().TrimStart('*').Trim())
-                    .Where(b => !string.IsNullOrWhiteSpace(b) &&
-                                b != currentBranch &&
-                                b != "main" &&
-                                b != "master")
-                    .ToList();
+                return; // No cleanup needed
+            }
 
-                if (!mergedBranches.Any())
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[yellow]ℹ[/] Found {mergedBranches.Count} merged branch(es):");
+
+            foreach (var branch in mergedBranches)
+            {
+                AnsiConsole.MarkupLine($"  [grey]•[/] [blue]{branch}[/]");
+            }
+
+            AnsiConsole.WriteLine();
+
+            foreach (var branch in mergedBranches)
+            {
+                if (AnsiConsole.Confirm($"Delete [blue]{branch}[/] (local + remote)?", true))
                 {
-                    return; // No cleanup needed
-                }
-
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine($"[yellow]ℹ[/] Found {mergedBranches.Count} merged branch(es):");
-
-                foreach (var branch in mergedBranches)
-                {
-                    AnsiConsole.MarkupLine($"  [grey]•[/] [blue]{branch}[/]");
-                }
-
-                AnsiConsole.WriteLine();
-
-                foreach (var branch in mergedBranches)
-                {
-                    if (AnsiConsole.Confirm($"Delete [blue]{branch}[/] (local + remote)?", true))
+                    // Delete local branch - use -D since we already verified it's merged to HEAD
+                    // The -d flag checks remote tracking which may not be updated yet
+                    var localResult = await _gitService.RunAsync($"branch -D {branch}", cancellationToken);
+                    if (localResult.Output.Contains("Deleted branch"))
                     {
-                        // Delete local branch - use -D since we already verified it's merged to HEAD
-                        // The -d flag checks remote tracking which may not be updated yet
-                        var localResult = _gitService.Run($"branch -D {branch}");
-                        if (localResult.Contains("Deleted branch"))
-                        {
-                            AnsiConsole.MarkupLine($"  [green]✓[/] Deleted local branch [grey]{branch}[/]");
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"  [yellow]⚠[/] Could not delete local: {localResult}");
-                        }
+                        AnsiConsole.MarkupLine($"  [green]✓[/] Deleted local branch [grey]{branch}[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"  [yellow]⚠[/] Could not delete local: {localResult.Output}");
+                    }
 
-                        // Delete remote branch
-                        var remoteResult = _gitService.Run($"push origin --delete {branch}");
-                        if (remoteResult.Contains("deleted") || remoteResult.Contains("remote ref does not exist"))
+                    // Delete remote branch
+                    var remoteResult = await _gitService.RunAsync($"push origin --delete {branch}", cancellationToken);
+                    if (remoteResult.Output.Contains("deleted") || remoteResult.Output.Contains("remote ref does not exist"))
+                    {
+                        AnsiConsole.MarkupLine($"  [green]✓[/] Deleted remote branch [grey]origin/{branch}[/]");
+                    }
+                    else if (remoteResult.Output.Contains("error") || remoteResult.Output.Contains("fatal"))
+                    {
+                        // Remote branch might not exist, that's okay
+                        if (!remoteResult.Output.Contains("remote ref does not exist"))
                         {
-                            AnsiConsole.MarkupLine($"  [green]✓[/] Deleted remote branch [grey]origin/{branch}[/]");
-                        }
-                        else if (remoteResult.Contains("error") || remoteResult.Contains("fatal"))
-                        {
-                            // Remote branch might not exist, that's okay
-                            if (!remoteResult.Contains("remote ref does not exist"))
-                            {
-                                AnsiConsole.MarkupLine($"  [grey]Note: Remote branch may not exist[/]");
-                            }
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"  [grey]Note: {remoteResult}[/]");
+                            AnsiConsole.MarkupLine($"  [grey]Note: Remote branch may not exist[/]");
                         }
                     }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"  [grey]Note: {remoteResult.Output}[/]");
+                    }
                 }
-            });
+            }
         }
 
-        private async Task<int> HandleNewRepoFlow()
+        private async Task<int> HandleNewRepoFlow(CancellationToken cancellationToken)
         {
             AnsiConsole.MarkupLine("[yellow]! No valid GitHub repository linked.[/]");
             

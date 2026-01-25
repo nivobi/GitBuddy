@@ -34,7 +34,7 @@ namespace GitBuddy.Commands.Git
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             // Check if we're in a git repository
-            if (!IsGitRepository())
+            if (!await IsGitRepositoryAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Not in a git repository.");
                 AnsiConsole.MarkupLine("[grey]Try running this command from inside a git repository.[/]");
@@ -45,23 +45,23 @@ namespace GitBuddy.Commands.Git
 
             return action switch
             {
-                "create" => await CreateBranch(settings.Name),
-                "switch" => await SwitchBranch(),
-                "list" => await ListBranches(),
-                "clean" => await CleanBranches(),
-                "delete" => await DeleteBranch(settings.Name),
-                "rename" => await RenameBranch(settings.Name, settings.NewName),
-                _ => await ShowHelp()
+                "create" => await CreateBranch(settings.Name, cancellationToken),
+                "switch" => await SwitchBranch(cancellationToken),
+                "list" => await ListBranches(cancellationToken),
+                "clean" => await CleanBranches(cancellationToken),
+                "delete" => await DeleteBranch(settings.Name, cancellationToken),
+                "rename" => await RenameBranch(settings.Name, settings.NewName, cancellationToken),
+                _ => await ShowHelp(cancellationToken)
             };
         }
 
-        private bool IsGitRepository()
+        private async Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken)
         {
-            var result = _gitService.Run("rev-parse --is-inside-work-tree");
-            return result.Equals("true", StringComparison.OrdinalIgnoreCase);
+            var result = await _gitService.RunAsync("rev-parse --is-inside-work-tree", cancellationToken);
+            return result.Output.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task<int> CreateBranch(string? name)
+        private async Task<int> CreateBranch(string? name, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -86,400 +86,385 @@ namespace GitBuddy.Commands.Git
                 fullBranchName = $"{branchType}/{name}";
             }
 
-            await Task.Run(() =>
+            ProcessResult result = null!;
+            await AnsiConsole.Status().StartAsync($"Creating branch [blue]{fullBranchName}[/]...", async ctx =>
             {
-                AnsiConsole.Status().Start($"Creating branch [blue]{fullBranchName}[/]...", ctx =>
-                {
-                    var result = _gitService.Run($"checkout -b {fullBranchName}");
-
-                    if (result.Contains("Switched to a new branch") || result.Contains("switched to a new branch"))
-                    {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Created and switched to branch [blue]{fullBranchName}[/]");
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to create branch: {result}");
-                    }
-                });
+                result = await _gitService.RunAsync($"checkout -b {fullBranchName}", cancellationToken);
             });
+
+            if (result.Output.Contains("Switched to a new branch") || result.Output.Contains("switched to a new branch"))
+            {
+                AnsiConsole.MarkupLine($"[green]✓[/] Created and switched to branch [blue]{fullBranchName}[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to create branch: {result.Output}");
+            }
 
             return 0;
         }
 
-        private async Task<int> SwitchBranch()
+        private async Task<int> SwitchBranch(CancellationToken cancellationToken)
         {
-            await Task.Run(() =>
+            // Get all branches
+            var branchOutput = await _gitService.RunAsync("branch -a", cancellationToken);
+            if (string.IsNullOrWhiteSpace(branchOutput.Output))
             {
-                // Get all branches
-                var branchOutput = _gitService.Run("branch -a");
-                if (string.IsNullOrWhiteSpace(branchOutput))
+                AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
+                return 0;
+            }
+
+            // Parse branches
+            var branches = branchOutput.Output
+                .Split('\n')
+                .Select(b => b.Trim().TrimStart('*').Trim())
+                .Where(b => !string.IsNullOrWhiteSpace(b) && !b.Contains("HEAD ->"))
+                .Select(b => b.Replace("remotes/origin/", ""))
+                .Distinct()
+                .OrderBy(b => b)
+                .ToList();
+
+            if (!branches.Any())
+            {
+                AnsiConsole.MarkupLine("[yellow]No branches available.[/]");
+                return 0;
+            }
+
+            // Show selection menu
+            var selectedBranch = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Switch to which [green]branch[/]?")
+                    .PageSize(10)
+                    .AddChoices(branches));
+
+            // Check for uncommitted changes first
+            var statusCheck = await _gitService.RunAsync("status --porcelain", cancellationToken);
+            if (!string.IsNullOrWhiteSpace(statusCheck.Output))
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠[/] You have uncommitted changes.");
+                AnsiConsole.MarkupLine("[grey]Please commit or stash your changes before switching branches.[/]");
+                AnsiConsole.MarkupLine($"\nTry: [blue]buddy save[/] to commit your changes");
+                return 1;
+            }
+
+            // Switch to selected branch
+            ProcessResult result = null!;
+            await AnsiConsole.Status().StartAsync($"Switching to [blue]{selectedBranch}[/]...", async ctx =>
+            {
+                result = await _gitService.RunAsync($"checkout {selectedBranch}", cancellationToken);
+            });
+
+            // Check for actual errors rather than specific success messages
+            if (result.Output.Contains("error:") || result.Output.Contains("fatal:"))
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {result.Output}");
+                return 1;
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[green]✓[/] Switched to branch [blue]{selectedBranch}[/]");
+            }
+
+            return 0;
+        }
+
+        private async Task<int> ListBranches(CancellationToken cancellationToken)
+        {
+            var currentBranch = await _gitService.RunAsync("branch --show-current", cancellationToken);
+            var branchOutput = await _gitService.RunAsync("branch -vv", cancellationToken);
+
+            if (string.IsNullOrWhiteSpace(branchOutput.Output))
+            {
+                AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
+                return 0;
+            }
+
+            var table = new Table();
+            table.Border(TableBorder.Rounded);
+            table.AddColumn(new TableColumn("[bold]Branch[/]").Centered());
+            table.AddColumn(new TableColumn("[bold]Commit[/]"));
+            table.AddColumn(new TableColumn("[bold]Message[/]"));
+
+            foreach (var line in branchOutput.Output.Split('\n'))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                var isCurrent = line.StartsWith("*");
+                var cleanLine = line.TrimStart('*').Trim();
+                var parts = cleanLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (parts.Length < 2) continue;
+
+                var branchName = parts[0];
+                var commitHash = parts[1];
+                var message = string.Join(" ", parts.Skip(2));
+
+                // Remove tracking info in brackets
+                if (message.Contains('['))
                 {
-                    AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
-                    return;
+                    var bracketIndex = message.IndexOf('[');
+                    var endBracketIndex = message.IndexOf(']', bracketIndex);
+                    if (endBracketIndex > bracketIndex)
+                    {
+                        message = message[(endBracketIndex + 1)..].Trim();
+                    }
                 }
 
-                // Parse branches
-                var branches = branchOutput
+                var branchDisplay = isCurrent ? $"[green]* {branchName}[/]" : $"  {branchName}";
+                table.AddRow(branchDisplay, $"[grey]{commitHash}[/]", message);
+            }
+
+            AnsiConsole.Write(table);
+
+            return 0;
+        }
+
+        private async Task<int> CleanBranches(CancellationToken cancellationToken)
+        {
+            AnsiConsole.MarkupLine("[blue]Checking for merged branches...[/]");
+
+            // Get current branch
+            var currentBranch = await _gitService.RunAsync("branch --show-current", cancellationToken);
+
+            // Get merged branches (excluding current and main/master)
+            var mergedOutput = await _gitService.RunAsync("branch --merged", cancellationToken);
+            var mergedBranches = mergedOutput.Output
+                .Split('\n')
+                .Select(b => b.Trim().TrimStart('*').Trim())
+                .Where(b => !string.IsNullOrWhiteSpace(b) &&
+                            b != currentBranch.Output.Trim() &&
+                            b != "main" &&
+                            b != "master")
+                .ToList();
+
+            if (!mergedBranches.Any())
+            {
+                AnsiConsole.MarkupLine("[green]✓[/] No merged branches to clean up!");
+                return 0;
+            }
+
+            // Show branches that will be deleted
+            var table = new Table();
+            table.Border(TableBorder.Rounded);
+            table.AddColumn("[bold]Branches to Delete[/]");
+
+            foreach (var branch in mergedBranches)
+            {
+                table.AddRow($"[red]{branch}[/]");
+            }
+
+            AnsiConsole.Write(table);
+
+            // Confirm deletion
+            var confirm = AnsiConsole.Confirm($"Delete these [red]{mergedBranches.Count}[/] merged branches?", false);
+
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                return 0;
+            }
+
+            // Delete branches
+            var deletedCount = 0;
+            foreach (var branch in mergedBranches)
+            {
+                var result = await _gitService.RunAsync($"branch -d {branch}", cancellationToken);
+                if (result.Output.Contains("Deleted branch"))
+                {
+                    AnsiConsole.MarkupLine($"[green]✓[/] Deleted [grey]{branch}[/]");
+                    deletedCount++;
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to delete {branch}: {result.Output}");
+                }
+            }
+
+            AnsiConsole.MarkupLine($"\n[green]✓[/] Cleaned up {deletedCount} branch(es)!");
+
+            return 0;
+        }
+
+        private async Task<int> DeleteBranch(string? name, CancellationToken cancellationToken)
+        {
+            var currentBranch = await _gitService.RunAsync("branch --show-current", cancellationToken);
+            var currentBranchName = currentBranch.Output.Trim();
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                // Interactive selection - include ALL branches including current
+                var branchOutput = await _gitService.RunAsync("branch", cancellationToken);
+
+                if (string.IsNullOrWhiteSpace(branchOutput.Output))
+                {
+                    AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
+                    return 0;
+                }
+
+                var branches = branchOutput.Output
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
-                    .Where(b => !string.IsNullOrWhiteSpace(b) && !b.Contains("HEAD ->"))
-                    .Select(b => b.Replace("remotes/origin/", ""))
-                    .Distinct()
-                    .OrderBy(b => b)
+                    .Where(b => !string.IsNullOrWhiteSpace(b))
                     .ToList();
 
                 if (!branches.Any())
                 {
-                    AnsiConsole.MarkupLine("[yellow]No branches available.[/]");
-                    return;
+                    AnsiConsole.MarkupLine("[yellow]No branches to delete.[/]");
+                    return 0;
                 }
 
-                // Show selection menu
-                var selectedBranch = AnsiConsole.Prompt(
+                name = AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
-                        .Title("Switch to which [green]branch[/]?")
-                        .PageSize(10)
+                        .Title("Which branch do you want to [red]delete[/]?")
                         .AddChoices(branches));
+            }
 
-                // Check for uncommitted changes first
-                var statusCheck = _gitService.Run("status --porcelain");
-                if (!string.IsNullOrWhiteSpace(statusCheck))
-                {
-                    AnsiConsole.MarkupLine("[yellow]⚠[/] You have uncommitted changes.");
-                    AnsiConsole.MarkupLine("[grey]Please commit or stash your changes before switching branches.[/]");
-                    AnsiConsole.MarkupLine($"\nTry: [blue]buddy save[/] to commit your changes");
-                    return;
-                }
+            // Check if deleting current branch
+            bool isDeletingCurrent = name == currentBranchName;
 
-                // Switch to selected branch
-                AnsiConsole.Status().Start($"Switching to [blue]{selectedBranch}[/]...", ctx =>
-                {
-                    var result = _gitService.Run($"checkout {selectedBranch}");
-
-                    // Check for actual errors rather than specific success messages
-                    if (result.Contains("error:") || result.Contains("fatal:"))
-                    {
-                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {result}");
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Switched to branch [blue]{selectedBranch}[/]");
-                    }
-                });
-            });
-
-            return 0;
-        }
-
-        private async Task<int> ListBranches()
-        {
-            await Task.Run(() =>
+            if (isDeletingCurrent)
             {
-                var currentBranch = _gitService.Run("branch --show-current");
-                var branchOutput = _gitService.Run("branch -vv");
+                AnsiConsole.MarkupLine($"[yellow]ℹ[/] You're currently on [blue]{name}[/]");
 
-                if (string.IsNullOrWhiteSpace(branchOutput))
-                {
-                    AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
-                    return;
-                }
-
-                var table = new Table();
-                table.Border(TableBorder.Rounded);
-                table.AddColumn(new TableColumn("[bold]Branch[/]").Centered());
-                table.AddColumn(new TableColumn("[bold]Commit[/]"));
-                table.AddColumn(new TableColumn("[bold]Message[/]"));
-
-                foreach (var line in branchOutput.Split('\n'))
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    var isCurrent = line.StartsWith("*");
-                    var cleanLine = line.TrimStart('*').Trim();
-                    var parts = cleanLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length < 2) continue;
-
-                    var branchName = parts[0];
-                    var commitHash = parts[1];
-                    var message = string.Join(" ", parts.Skip(2));
-
-                    // Remove tracking info in brackets
-                    if (message.Contains('['))
-                    {
-                        var bracketIndex = message.IndexOf('[');
-                        var endBracketIndex = message.IndexOf(']', bracketIndex);
-                        if (endBracketIndex > bracketIndex)
-                        {
-                            message = message[(endBracketIndex + 1)..].Trim();
-                        }
-                    }
-
-                    var branchDisplay = isCurrent ? $"[green]* {branchName}[/]" : $"  {branchName}";
-                    table.AddRow(branchDisplay, $"[grey]{commitHash}[/]", message);
-                }
-
-                AnsiConsole.Write(table);
-            });
-
-            return 0;
-        }
-
-        private async Task<int> CleanBranches()
-        {
-            await Task.Run(() =>
-            {
-                AnsiConsole.MarkupLine("[blue]Checking for merged branches...[/]");
-
-                // Get current branch
-                var currentBranch = _gitService.Run("branch --show-current");
-
-                // Get merged branches (excluding current and main/master)
-                var mergedOutput = _gitService.Run("branch --merged");
-                var mergedBranches = mergedOutput
+                // Find a branch to switch to (prefer master/main)
+                var allBranchesResult = await _gitService.RunAsync("branch", cancellationToken);
+                var allBranches = allBranchesResult.Output
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
-                    .Where(b => !string.IsNullOrWhiteSpace(b) &&
-                                b != currentBranch &&
-                                b != "main" &&
-                                b != "master")
+                    .Where(b => !string.IsNullOrWhiteSpace(b) && b != currentBranchName)
                     .ToList();
 
-                if (!mergedBranches.Any())
+                if (!allBranches.Any())
                 {
-                    AnsiConsole.MarkupLine("[green]✓[/] No merged branches to clean up!");
-                    return;
+                    AnsiConsole.MarkupLine("[red]✗[/] Cannot delete the only branch.");
+                    return 1;
                 }
 
-                // Show branches that will be deleted
-                var table = new Table();
-                table.Border(TableBorder.Rounded);
-                table.AddColumn("[bold]Branches to Delete[/]");
+                string targetBranch = allBranches.Contains("master") ? "master" :
+                                     allBranches.Contains("main") ? "main" :
+                                     allBranches.First();
 
-                foreach (var branch in mergedBranches)
-                {
-                    table.AddRow($"[red]{branch}[/]");
-                }
-
-                AnsiConsole.Write(table);
-
-                // Confirm deletion
-                var confirm = AnsiConsole.Confirm($"Delete these [red]{mergedBranches.Count}[/] merged branches?", false);
-
-                if (!confirm)
+                if (!AnsiConsole.Confirm($"Switch to [blue]{targetBranch}[/] first?", true))
                 {
                     AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                    return;
+                    return 0;
                 }
 
-                // Delete branches
-                var deletedCount = 0;
-                foreach (var branch in mergedBranches)
+                // Switch to target branch
+                var switchResult = await _gitService.RunAsync($"checkout {targetBranch}", cancellationToken);
+                if (switchResult.Output.Contains("error:") || switchResult.Output.Contains("fatal:"))
                 {
-                    var result = _gitService.Run($"branch -d {branch}");
-                    if (result.Contains("Deleted branch"))
+                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult.Output}");
+                    return 1;
+                }
+
+                AnsiConsole.MarkupLine($"[green]✓[/] Switched to [blue]{targetBranch}[/]");
+            }
+
+            // Confirm deletion
+            if (!AnsiConsole.Confirm($"Delete branch [red]{name}[/]?", false))
+            {
+                AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                return 0;
+            }
+
+            // Try safe delete first (-d), which prevents deleting unmerged branches
+            var result = await _gitService.RunAsync($"branch -d {name}", cancellationToken);
+
+            if (result.Output.Contains("Deleted branch"))
+            {
+                AnsiConsole.MarkupLine($"[green]✓[/] Deleted branch [grey]{name}[/]");
+            }
+            else if (result.Output.Contains("not fully merged"))
+            {
+                AnsiConsole.MarkupLine($"[yellow]⚠[/] Branch [blue]{name}[/] is not fully merged.");
+
+                if (AnsiConsole.Confirm("Force delete anyway? [red](You may lose commits!)[/]", false))
+                {
+                    result = await _gitService.RunAsync($"branch -D {name}", cancellationToken);
+                    if (result.Output.Contains("Deleted branch"))
                     {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Deleted [grey]{branch}[/]");
-                        deletedCount++;
+                        AnsiConsole.MarkupLine($"[green]✓[/] Force deleted branch [grey]{name}[/]");
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to delete {branch}: {result}");
+                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to delete: {result.Output}");
                     }
                 }
-
-                AnsiConsole.MarkupLine($"\n[green]✓[/] Cleaned up {deletedCount} branch(es)!");
-            });
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to delete: {result.Output}");
+            }
 
             return 0;
         }
 
-        private async Task<int> DeleteBranch(string? name)
+        private async Task<int> RenameBranch(string? oldName, string? newName, CancellationToken cancellationToken)
         {
-            await Task.Run(() =>
+            var currentBranch = await _gitService.RunAsync("branch --show-current", cancellationToken);
+            var currentBranchName = currentBranch.Output.Trim();
+
+            // If no old name specified, assume renaming current branch
+            if (string.IsNullOrWhiteSpace(oldName))
             {
-                var currentBranch = _gitService.Run("branch --show-current");
+                oldName = currentBranchName;
+            }
 
-                if (string.IsNullOrWhiteSpace(name))
+            // If no new name specified, ask for it
+            if (string.IsNullOrWhiteSpace(newName))
+            {
+                newName = AnsiConsole.Ask<string>($"Rename [blue]{oldName}[/] to:");
+            }
+
+            // Check if we're renaming the current branch
+            bool isCurrentBranch = oldName == currentBranchName;
+
+            string moveFlag = isCurrentBranch ? "-m" : "-m";
+            var result = await _gitService.RunAsync($"branch {moveFlag} {oldName} {newName}", cancellationToken);
+
+            if (result.Output.Contains("Renamed") || result.Output.Contains("renamed") || string.IsNullOrWhiteSpace(result.Output))
+            {
+                AnsiConsole.MarkupLine($"[green]✓[/] Renamed [grey]{oldName}[/] to [blue]{newName}[/]");
+
+                if (isCurrentBranch)
                 {
-                    // Interactive selection - include ALL branches including current
-                    var branchOutput = _gitService.Run("branch");
-
-                    if (string.IsNullOrWhiteSpace(branchOutput))
-                    {
-                        AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
-                        return;
-                    }
-
-                    var branches = branchOutput
-                        .Split('\n')
-                        .Select(b => b.Trim().TrimStart('*').Trim())
-                        .Where(b => !string.IsNullOrWhiteSpace(b))
-                        .ToList();
-
-                    if (!branches.Any())
-                    {
-                        AnsiConsole.MarkupLine("[yellow]No branches to delete.[/]");
-                        return;
-                    }
-
-                    name = AnsiConsole.Prompt(
-                        new SelectionPrompt<string>()
-                            .Title("Which branch do you want to [red]delete[/]?")
-                            .AddChoices(branches));
+                    AnsiConsole.MarkupLine($"[grey]You are now on branch[/] [blue]{newName}[/]");
                 }
-
-                // Check if deleting current branch
-                bool isDeletingCurrent = name == currentBranch;
-
-                if (isDeletingCurrent)
-                {
-                    AnsiConsole.MarkupLine($"[yellow]ℹ[/] You're currently on [blue]{name}[/]");
-
-                    // Find a branch to switch to (prefer master/main)
-                    var allBranches = _gitService.Run("branch")
-                        .Split('\n')
-                        .Select(b => b.Trim().TrimStart('*').Trim())
-                        .Where(b => !string.IsNullOrWhiteSpace(b) && b != currentBranch)
-                        .ToList();
-
-                    if (!allBranches.Any())
-                    {
-                        AnsiConsole.MarkupLine("[red]✗[/] Cannot delete the only branch.");
-                        return;
-                    }
-
-                    string targetBranch = allBranches.Contains("master") ? "master" :
-                                         allBranches.Contains("main") ? "main" :
-                                         allBranches.First();
-
-                    if (!AnsiConsole.Confirm($"Switch to [blue]{targetBranch}[/] first?", true))
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                        return;
-                    }
-
-                    // Switch to target branch
-                    var switchResult = _gitService.Run($"checkout {targetBranch}");
-                    if (switchResult.Contains("error:") || switchResult.Contains("fatal:"))
-                    {
-                        AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult}");
-                        return;
-                    }
-
-                    AnsiConsole.MarkupLine($"[green]✓[/] Switched to [blue]{targetBranch}[/]");
-                }
-
-                // Confirm deletion
-                if (!AnsiConsole.Confirm($"Delete branch [red]{name}[/]?", false))
-                {
-                    AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                    return;
-                }
-
-                // Try safe delete first (-d), which prevents deleting unmerged branches
-                var result = _gitService.Run($"branch -d {name}");
-
-                if (result.Contains("Deleted branch"))
-                {
-                    AnsiConsole.MarkupLine($"[green]✓[/] Deleted branch [grey]{name}[/]");
-                }
-                else if (result.Contains("not fully merged"))
-                {
-                    AnsiConsole.MarkupLine($"[yellow]⚠[/] Branch [blue]{name}[/] is not fully merged.");
-
-                    if (AnsiConsole.Confirm("Force delete anyway? [red](You may lose commits!)[/]", false))
-                    {
-                        result = _gitService.Run($"branch -D {name}");
-                        if (result.Contains("Deleted branch"))
-                        {
-                            AnsiConsole.MarkupLine($"[green]✓[/] Force deleted branch [grey]{name}[/]");
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine($"[red]✗[/] Failed to delete: {result}");
-                        }
-                    }
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to delete: {result}");
-                }
-            });
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to rename: {result.Output}");
+            }
 
             return 0;
         }
 
-        private async Task<int> RenameBranch(string? oldName, string? newName)
+        private Task<int> ShowHelp(CancellationToken cancellationToken)
         {
-            await Task.Run(() =>
-            {
-                var currentBranch = _gitService.Run("branch --show-current");
+            var panel = new Panel(
+                "[bold]buddy branch[/] - Smart branch management\n\n" +
+                "[yellow]Actions:[/]\n" +
+                "  [blue]create[/] [[name]]     - Create a new branch with naming conventions\n" +
+                "  [blue]switch[/]            - Interactive branch switcher\n" +
+                "  [blue]list[/]              - Show all branches with commit info\n" +
+                "  [blue]delete[/] [[name]]     - Delete a branch (interactive if no name)\n" +
+                "  [blue]rename[/] [[old]] [[new]] - Rename a branch (uses current if no old name)\n" +
+                "  [blue]clean[/]             - Remove merged branches\n\n" +
+                "[grey]Examples:[/]\n" +
+                "  buddy branch list\n" +
+                "  buddy branch create dark-mode\n" +
+                "  buddy branch switch\n" +
+                "  buddy branch delete old-feature\n" +
+                "  buddy branch rename new-name\n" +
+                "  buddy branch clean"
+            );
+            panel.Header = new PanelHeader("Branch Command Help");
+            panel.BorderColor(Color.Blue);
 
-                // If no old name specified, assume renaming current branch
-                if (string.IsNullOrWhiteSpace(oldName))
-                {
-                    oldName = currentBranch;
-                }
+            AnsiConsole.Write(panel);
 
-                // If no new name specified, ask for it
-                if (string.IsNullOrWhiteSpace(newName))
-                {
-                    newName = AnsiConsole.Ask<string>($"Rename [blue]{oldName}[/] to:");
-                }
-
-                // Check if we're renaming the current branch
-                bool isCurrentBranch = oldName == currentBranch;
-
-                string moveFlag = isCurrentBranch ? "-m" : "-m";
-                var result = _gitService.Run($"branch {moveFlag} {oldName} {newName}");
-
-                if (result.Contains("Renamed") || result.Contains("renamed") || string.IsNullOrWhiteSpace(result))
-                {
-                    AnsiConsole.MarkupLine($"[green]✓[/] Renamed [grey]{oldName}[/] to [blue]{newName}[/]");
-
-                    if (isCurrentBranch)
-                    {
-                        AnsiConsole.MarkupLine($"[grey]You are now on branch[/] [blue]{newName}[/]");
-                    }
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to rename: {result}");
-                }
-            });
-
-            return 0;
-        }
-
-        private async Task<int> ShowHelp()
-        {
-            await Task.Run(() =>
-            {
-                var panel = new Panel(
-                    "[bold]buddy branch[/] - Smart branch management\n\n" +
-                    "[yellow]Actions:[/]\n" +
-                    "  [blue]create[/] [[name]]     - Create a new branch with naming conventions\n" +
-                    "  [blue]switch[/]            - Interactive branch switcher\n" +
-                    "  [blue]list[/]              - Show all branches with commit info\n" +
-                    "  [blue]delete[/] [[name]]     - Delete a branch (interactive if no name)\n" +
-                    "  [blue]rename[/] [[old]] [[new]] - Rename a branch (uses current if no old name)\n" +
-                    "  [blue]clean[/]             - Remove merged branches\n\n" +
-                    "[grey]Examples:[/]\n" +
-                    "  buddy branch list\n" +
-                    "  buddy branch create dark-mode\n" +
-                    "  buddy branch switch\n" +
-                    "  buddy branch delete old-feature\n" +
-                    "  buddy branch rename new-name\n" +
-                    "  buddy branch clean"
-                );
-                panel.Header = new PanelHeader("Branch Command Help");
-                panel.BorderColor(Color.Blue);
-
-                AnsiConsole.Write(panel);
-            });
-
-            return 0;
+            return Task.FromResult(0);
         }
     }
 }

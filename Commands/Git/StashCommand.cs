@@ -38,7 +38,7 @@ namespace GitBuddy.Commands.Git
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             // Check if we're in a git repository
-            if (!IsGitRepository())
+            if (!await IsGitRepositoryAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Not in a git repository.");
                 AnsiConsole.MarkupLine("[grey]Try running this command from inside a git repository.[/]");
@@ -49,111 +49,106 @@ namespace GitBuddy.Commands.Git
 
             return action switch
             {
-                "push" => await PushStash(settings),
-                "pop" => await PopStash(settings.Index),
-                "apply" => await ApplyStash(settings.Index),
-                "list" => await ListStashes(),
-                _ => await ListStashes() // Default to list for unknown actions
+                "push" => await PushStash(settings, cancellationToken),
+                "pop" => await PopStash(settings.Index, cancellationToken),
+                "apply" => await ApplyStash(settings.Index, cancellationToken),
+                "list" => await ListStashes(cancellationToken),
+                _ => await ListStashes(cancellationToken) // Default to list for unknown actions
             };
         }
 
-        private bool IsGitRepository()
+        private async Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken)
         {
-            var result = _gitService.Run("rev-parse --is-inside-work-tree");
-            return result.Equals("true", StringComparison.OrdinalIgnoreCase);
+            var result = await _gitService.RunAsync("rev-parse --is-inside-work-tree", cancellationToken);
+            return result.Output.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task<int> PushStash(Settings settings)
+        private async Task<int> PushStash(Settings settings, CancellationToken cancellationToken)
         {
-            return await Task.Run(() =>
+            // Check if there are changes to stash
+            var statusResult = await _gitService.RunAsync("status --porcelain", cancellationToken);
+            if (string.IsNullOrWhiteSpace(statusResult.Output))
             {
-                // Check if there are changes to stash
-                var statusCheck = _gitService.Run("status --porcelain");
-                if (string.IsNullOrWhiteSpace(statusCheck))
-                {
-                    AnsiConsole.MarkupLine("[yellow]⚠[/] No changes to stash.");
-                    return 0;
-                }
+                AnsiConsole.MarkupLine("[yellow]⚠[/] No changes to stash.");
+                return 0;
+            }
 
-                // Get or prompt for message
-                string? message = settings.Message;
-                if (string.IsNullOrWhiteSpace(message))
-                {
-                    message = AnsiConsole.Ask<string>("Enter stash [yellow]message[/]:");
-                }
+            // Get or prompt for message
+            string? message = settings.Message;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                message = AnsiConsole.Ask<string>("Enter stash [yellow]message[/]:");
+            }
 
-                // Build the stash command
-                var stashArgs = settings.IncludeUntracked
-                    ? $"stash push -u -m \"{message}\""
-                    : $"stash push -m \"{message}\"";
+            // Build the stash command
+            var stashArgs = settings.IncludeUntracked
+                ? $"stash push -u -m \"{message}\""
+                : $"stash push -m \"{message}\"";
 
-                // Execute stash
-                string result = "";
-                AnsiConsole.Status().Start("Stashing changes...", ctx =>
-                {
-                    result = _gitService.Run(stashArgs);
-                });
+            // Execute stash
+            ProcessResult result = null!;
+            await AnsiConsole.Status().StartAsync("Stashing changes...", async ctx =>
+            {
+                result = await _gitService.RunAsync(stashArgs, cancellationToken);
+            });
 
-                if (result.Contains("Saved working directory") || result.Contains("No local changes to save"))
+            if (result.Output.Contains("Saved working directory") || result.Output.Contains("No local changes to save"))
+            {
+                if (result.Output.Contains("No local changes"))
                 {
-                    if (result.Contains("No local changes"))
-                    {
-                        AnsiConsole.MarkupLine("[yellow]ℹ[/] No local changes to save.");
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Stashed changes: [blue]{message}[/]");
-                        if (settings.IncludeUntracked)
-                        {
-                            AnsiConsole.MarkupLine("[grey]Included untracked files[/]");
-                        }
-                    }
-                    return 0;
+                    AnsiConsole.MarkupLine("[yellow]ℹ[/] No local changes to save.");
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to stash: {result}");
-                    return 1;
+                    AnsiConsole.MarkupLine($"[green]✓[/] Stashed changes: [blue]{message}[/]");
+                    if (settings.IncludeUntracked)
+                    {
+                        AnsiConsole.MarkupLine("[grey]Included untracked files[/]");
+                    }
                 }
-            });
+                return 0;
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to stash: {result.Output}");
+                return 1;
+            }
         }
 
-        private async Task<int> ListStashes()
+        private async Task<int> ListStashes(CancellationToken cancellationToken)
         {
-            return await Task.Run(() =>
+            var result = await _gitService.RunAsync("stash list", cancellationToken);
+            var stashOutput = result.Output;
+
+            if (string.IsNullOrWhiteSpace(stashOutput))
             {
-                var stashOutput = _gitService.Run("stash list");
-
-                if (string.IsNullOrWhiteSpace(stashOutput))
-                {
-                    AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
-                    AnsiConsole.MarkupLine("[grey]Use[/] [blue]buddy stash push[/] [grey]to create a stash.[/]");
-                    return 0;
-                }
-
-                var stashes = ParseStashList(stashOutput);
-
-                var table = new Table();
-                table.Border(TableBorder.Rounded);
-                table.AddColumn(new TableColumn("[bold]Index[/]").Centered());
-                table.AddColumn(new TableColumn("[bold]Branch[/]"));
-                table.AddColumn(new TableColumn("[bold]Message[/]"));
-
-                foreach (var stash in stashes)
-                {
-                    table.AddRow(
-                        $"[blue]{stash.Index}[/]",
-                        $"[grey]{stash.Branch}[/]",
-                        stash.Message
-                    );
-                }
-
-                AnsiConsole.Write(table);
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine($"[grey]Total:[/] {stashes.Count} stash(es)");
-
+                AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
+                AnsiConsole.MarkupLine("[grey]Use[/] [blue]buddy stash push[/] [grey]to create a stash.[/]");
                 return 0;
-            });
+            }
+
+            var stashes = ParseStashList(stashOutput);
+
+            var table = new Table();
+            table.Border(TableBorder.Rounded);
+            table.AddColumn(new TableColumn("[bold]Index[/]").Centered());
+            table.AddColumn(new TableColumn("[bold]Branch[/]"));
+            table.AddColumn(new TableColumn("[bold]Message[/]"));
+
+            foreach (var stash in stashes)
+            {
+                table.AddRow(
+                    $"[blue]{stash.Index}[/]",
+                    $"[grey]{stash.Branch}[/]",
+                    stash.Message
+                );
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[grey]Total:[/] {stashes.Count} stash(es)");
+
+            return 0;
         }
 
         private static List<StashEntry> ParseStashList(string stashOutput)
@@ -197,186 +192,179 @@ namespace GitBuddy.Commands.Git
             return stashes;
         }
 
-        private async Task<int> PopStash(int? index)
+        private async Task<int> PopStash(int? index, CancellationToken cancellationToken)
         {
-            return await Task.Run(() =>
+            // Check if there are any stashes
+            var listResult = await _gitService.RunAsync("stash list", cancellationToken);
+            if (string.IsNullOrWhiteSpace(listResult.Output))
             {
-                // Check if there are any stashes
-                var stashOutput = _gitService.Run("stash list");
-                if (string.IsNullOrWhiteSpace(stashOutput))
-                {
-                    AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
-                    return 0;
-                }
+                AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
+                return 0;
+            }
 
-                // Get index interactively if not provided
+            // Get index interactively if not provided
+            if (!index.HasValue)
+            {
+                index = await SelectStashInteractively(cancellationToken);
                 if (!index.HasValue)
-                {
-                    index = SelectStashInteractively().Result;
-                    if (!index.HasValue)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                        return 0;
-                    }
-                }
-
-                var stashRef = $"stash@{{{index.Value}}}";
-
-                // Verify stash exists
-                var verifyResult = _gitService.Run($"stash list {stashRef}");
-                if (string.IsNullOrWhiteSpace(verifyResult))
-                {
-                    AnsiConsole.MarkupLine($"[red]✗ Error:[/] Stash [blue]{stashRef}[/] does not exist.");
-                    return 1;
-                }
-
-                // Check for uncommitted changes
-                var statusCheck = _gitService.Run("status --porcelain");
-                if (!string.IsNullOrWhiteSpace(statusCheck))
-                {
-                    AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
-                    if (!AnsiConsole.Confirm("Apply stash anyway? (may cause conflicts)", false))
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                        return 0;
-                    }
-                }
-
-                // Confirm pop operation
-                if (!AnsiConsole.Confirm($"Pop [blue]{stashRef}[/]? (applies and removes from stash list)", true))
                 {
                     AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
                     return 0;
                 }
+            }
 
-                // Perform pop
-                string result = "";
-                AnsiConsole.Status().Start($"Popping [blue]{stashRef}[/]...", ctx =>
-                {
-                    result = _gitService.Run($"stash pop {stashRef}");
-                });
+            var stashRef = $"stash@{{{index.Value}}}";
 
-                if (result.Contains("CONFLICT") || result.Contains("error:") || result.Contains("fatal:"))
-                {
-                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to pop stash:");
-                    AnsiConsole.MarkupLine($"[grey]{result}[/]");
-
-                    if (result.Contains("CONFLICT"))
-                    {
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.MarkupLine("[yellow]⚠[/] Conflicts detected. Resolve conflicts and:");
-                        AnsiConsole.MarkupLine($"  1. Run [blue]buddy save[/] to commit resolved changes");
-                        AnsiConsole.MarkupLine($"  2. Run [blue]git stash drop {stashRef}[/] to remove stash");
-                    }
-                    return 1;
-                }
-
-                AnsiConsole.MarkupLine($"[green]✓[/] Popped [blue]{stashRef}[/] successfully!");
-                return 0;
-            });
-        }
-
-        private async Task<int> ApplyStash(int? index)
-        {
-            return await Task.Run(() =>
+            // Verify stash exists
+            var verifyResult = await _gitService.RunAsync($"stash list {stashRef}", cancellationToken);
+            if (string.IsNullOrWhiteSpace(verifyResult.Output))
             {
-                // Check if there are any stashes
-                var stashOutput = _gitService.Run("stash list");
-                if (string.IsNullOrWhiteSpace(stashOutput))
+                AnsiConsole.MarkupLine($"[red]✗ Error:[/] Stash [blue]{stashRef}[/] does not exist.");
+                return 1;
+            }
+
+            // Check for uncommitted changes
+            var statusResult = await _gitService.RunAsync("status --porcelain", cancellationToken);
+            if (!string.IsNullOrWhiteSpace(statusResult.Output))
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
+                if (!AnsiConsole.Confirm("Apply stash anyway? (may cause conflicts)", false))
                 {
-                    AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
+                    AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
                     return 0;
                 }
+            }
 
-                // Get index interactively if not provided
-                if (!index.HasValue)
-                {
-                    index = SelectStashInteractively().Result;
-                    if (!index.HasValue)
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                        return 0;
-                    }
-                }
-
-                var stashRef = $"stash@{{{index.Value}}}";
-
-                // Verify stash exists
-                var verifyResult = _gitService.Run($"stash list {stashRef}");
-                if (string.IsNullOrWhiteSpace(verifyResult))
-                {
-                    AnsiConsole.MarkupLine($"[red]✗ Error:[/] Stash [blue]{stashRef}[/] does not exist.");
-                    return 1;
-                }
-
-                // Check for uncommitted changes (warning only)
-                var statusCheck = _gitService.Run("status --porcelain");
-                if (!string.IsNullOrWhiteSpace(statusCheck))
-                {
-                    AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
-                    if (!AnsiConsole.Confirm("Apply stash anyway? (may cause conflicts)", false))
-                    {
-                        AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
-                        return 0;
-                    }
-                }
-
-                // Perform apply
-                string result = "";
-                AnsiConsole.Status().Start($"Applying [blue]{stashRef}[/]...", ctx =>
-                {
-                    result = _gitService.Run($"stash apply {stashRef}");
-                });
-
-                if (result.Contains("CONFLICT") || result.Contains("error:") || result.Contains("fatal:"))
-                {
-                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to apply stash:");
-                    AnsiConsole.MarkupLine($"[grey]{result}[/]");
-
-                    if (result.Contains("CONFLICT"))
-                    {
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.MarkupLine("[yellow]⚠[/] Conflicts detected. Resolve conflicts and run [blue]buddy save[/]");
-                    }
-                    return 1;
-                }
-
-                AnsiConsole.MarkupLine($"[green]✓[/] Applied [blue]{stashRef}[/] successfully!");
-                AnsiConsole.MarkupLine($"[grey]Stash kept in list. Use[/] [blue]git stash drop {index}[/] [grey]to remove it.[/]");
+            // Confirm pop operation
+            if (!AnsiConsole.Confirm($"Pop [blue]{stashRef}[/]? (applies and removes from stash list)", true))
+            {
+                AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
                 return 0;
+            }
+
+            // Perform pop
+            ProcessResult result = null!;
+            await AnsiConsole.Status().StartAsync($"Popping [blue]{stashRef}[/]...", async ctx =>
+            {
+                result = await _gitService.RunAsync($"stash pop {stashRef}", cancellationToken);
             });
+
+            if (result.Output.Contains("CONFLICT") || result.Output.Contains("error:") || result.Output.Contains("fatal:"))
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to pop stash:");
+                AnsiConsole.MarkupLine($"[grey]{result.Output}[/]");
+
+                if (result.Output.Contains("CONFLICT"))
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine("[yellow]⚠[/] Conflicts detected. Resolve conflicts and:");
+                    AnsiConsole.MarkupLine($"  1. Run [blue]buddy save[/] to commit resolved changes");
+                    AnsiConsole.MarkupLine($"  2. Run [blue]git stash drop {stashRef}[/] to remove stash");
+                }
+                return 1;
+            }
+
+            AnsiConsole.MarkupLine($"[green]✓[/] Popped [blue]{stashRef}[/] successfully!");
+            return 0;
         }
 
-        private async Task<int?> SelectStashInteractively()
+        private async Task<int> ApplyStash(int? index, CancellationToken cancellationToken)
         {
-            return await Task.Run(() =>
+            // Check if there are any stashes
+            var listResult = await _gitService.RunAsync("stash list", cancellationToken);
+            if (string.IsNullOrWhiteSpace(listResult.Output))
             {
-                var stashOutput = _gitService.Run("stash list");
-                if (string.IsNullOrWhiteSpace(stashOutput))
+                AnsiConsole.MarkupLine("[yellow]No stashes found.[/]");
+                return 0;
+            }
+
+            // Get index interactively if not provided
+            if (!index.HasValue)
+            {
+                index = await SelectStashInteractively(cancellationToken);
+                if (!index.HasValue)
                 {
-                    return (int?)null;
+                    AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                    return 0;
                 }
+            }
 
-                var stashes = ParseStashList(stashOutput);
-                if (!stashes.Any())
+            var stashRef = $"stash@{{{index.Value}}}";
+
+            // Verify stash exists
+            var verifyResult = await _gitService.RunAsync($"stash list {stashRef}", cancellationToken);
+            if (string.IsNullOrWhiteSpace(verifyResult.Output))
+            {
+                AnsiConsole.MarkupLine($"[red]✗ Error:[/] Stash [blue]{stashRef}[/] does not exist.");
+                return 1;
+            }
+
+            // Check for uncommitted changes (warning only)
+            var statusResult = await _gitService.RunAsync("status --porcelain", cancellationToken);
+            if (!string.IsNullOrWhiteSpace(statusResult.Output))
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
+                if (!AnsiConsole.Confirm("Apply stash anyway? (may cause conflicts)", false))
                 {
-                    return (int?)null;
+                    AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                    return 0;
                 }
+            }
 
-                // Create selection choices with formatted display
-                var choices = stashes.Select(s =>
-                    $"[{s.Index}] {s.Branch}: {s.Message}").ToList();
-
-                var selected = AnsiConsole.Prompt(
-                    new SelectionPrompt<string>()
-                        .Title("Which [green]stash[/] do you want to use?")
-                        .PageSize(10)
-                        .AddChoices(choices));
-
-                // Extract index from selection
-                var indexStr = selected.Substring(1, selected.IndexOf(']') - 1);
-                return int.Parse(indexStr);
+            // Perform apply
+            ProcessResult result = null!;
+            await AnsiConsole.Status().StartAsync($"Applying [blue]{stashRef}[/]...", async ctx =>
+            {
+                result = await _gitService.RunAsync($"stash apply {stashRef}", cancellationToken);
             });
+
+            if (result.Output.Contains("CONFLICT") || result.Output.Contains("error:") || result.Output.Contains("fatal:"))
+            {
+                AnsiConsole.MarkupLine($"[red]✗[/] Failed to apply stash:");
+                AnsiConsole.MarkupLine($"[grey]{result.Output}[/]");
+
+                if (result.Output.Contains("CONFLICT"))
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine("[yellow]⚠[/] Conflicts detected. Resolve conflicts and run [blue]buddy save[/]");
+                }
+                return 1;
+            }
+
+            AnsiConsole.MarkupLine($"[green]✓[/] Applied [blue]{stashRef}[/] successfully!");
+            AnsiConsole.MarkupLine($"[grey]Stash kept in list. Use[/] [blue]git stash drop {index}[/] [grey]to remove it.[/]");
+            return 0;
+        }
+
+        private async Task<int?> SelectStashInteractively(CancellationToken cancellationToken)
+        {
+            var result = await _gitService.RunAsync("stash list", cancellationToken);
+            var stashOutput = result.Output;
+
+            if (string.IsNullOrWhiteSpace(stashOutput))
+            {
+                return (int?)null;
+            }
+
+            var stashes = ParseStashList(stashOutput);
+            if (!stashes.Any())
+            {
+                return (int?)null;
+            }
+
+            // Create selection choices with formatted display
+            var choices = stashes.Select(s =>
+                $"[{s.Index}] {s.Branch}: {s.Message}").ToList();
+
+            var selected = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Which [green]stash[/] do you want to use?")
+                    .PageSize(10)
+                    .AddChoices(choices));
+
+            // Extract index from selection
+            var indexStr = selected.Substring(1, selected.IndexOf(']') - 1);
+            return int.Parse(indexStr);
         }
     }
 

@@ -31,7 +31,7 @@ namespace GitBuddy.Commands.Git
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             // Check if we're in a git repository
-            if (!IsGitRepository())
+            if (!await IsGitRepositoryAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Not in a git repository.");
                 AnsiConsole.MarkupLine("[grey]Try running this command from inside a git repository.[/]");
@@ -39,8 +39,8 @@ namespace GitBuddy.Commands.Git
             }
 
             // 1. Stage changes
-            AnsiConsole.Status().Start("Staging files...", ctx => { 
-                _gitService.Run("add ."); 
+            await AnsiConsole.Status().StartAsync("Staging files...", async ctx => {
+                await _gitService.RunAsync("add .", cancellationToken);
             });
 
             string? commitMessage = null;
@@ -56,8 +56,9 @@ namespace GitBuddy.Commands.Git
                 }
                 else
                 {
-                    string diff = _gitService.Run("diff --cached");
-                    
+                    var diffResult = await _gitService.RunAsync("diff --cached", cancellationToken);
+                    string diff = diffResult.Output;
+
                     if (string.IsNullOrWhiteSpace(diff))
                     {
                         AnsiConsole.MarkupLine("[yellow]! No staged changes found to analyze.[/]");
@@ -67,7 +68,7 @@ namespace GitBuddy.Commands.Git
                         await AnsiConsole.Status().StartAsync("[blue]AI is thinking...[/]", async ctx => {
                             commitMessage = await _aiService.GenerateCommitMessage(diff);
                         });
-                        
+
                         if (string.IsNullOrEmpty(commitMessage))
                         {
                             AnsiConsole.MarkupLine("[grey]AI couldn't come up with a message. Falling back to manual.[/]");
@@ -86,18 +87,18 @@ namespace GitBuddy.Commands.Git
                 AnsiConsole.Write(new Panel(new Text(commitMessage, new Style(Color.Blue)))
                     .Header("AI Suggestion")
                     .BorderColor(Color.Blue));
-                
+
                 var choice = AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
                         .AddChoices(new[] { "✔ Accept", "✎ Edit", "✖ Cancel" }));
 
-                if (choice == "✖ Cancel") 
+                if (choice == "✖ Cancel")
                 {
                     AnsiConsole.MarkupLine("[red]Save cancelled.[/]");
                     return 0;
                 }
-                
-                if (choice == "✎ Edit") 
+
+                if (choice == "✎ Edit")
                 {
                     commitMessage = AnsiConsole.Ask<string>("Edit message:", commitMessage);
                 }
@@ -105,19 +106,19 @@ namespace GitBuddy.Commands.Git
 
             // 4. Final Save
             AnsiConsole.MarkupLine("[grey]Saving...[/]");
-            string result = _gitService.Run($"commit -m \"{commitMessage}\"");
-            
-            AnsiConsole.Write(new Panel(new Text(result))
+            var result = await _gitService.RunAsync($"commit -m \"{commitMessage}\"", cancellationToken);
+
+            AnsiConsole.Write(new Panel(new Text(result.Output))
                 .Header("✔ Work Saved")
                 .BorderColor(Color.Green));
 
             return 0;
         }
 
-        private bool IsGitRepository()
+        private async Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken)
         {
-            var result = _gitService.Run("rev-parse --is-inside-work-tree");
-            return result.Equals("true", StringComparison.OrdinalIgnoreCase);
+            var result = await _gitService.RunAsync("rev-parse --is-inside-work-tree", cancellationToken);
+            return result.Output.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

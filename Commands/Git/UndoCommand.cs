@@ -19,7 +19,7 @@ namespace GitBuddy.Commands.Git
         {
         }
 
-        public override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+        public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             // 1. Ask the user what they want to do
             var choice = AnsiConsole.Prompt(
@@ -27,7 +27,7 @@ namespace GitBuddy.Commands.Git
                     .Title("[yellow]What would you like to undo?[/]")
                     .AddChoices(new[] {
                         "Cancel (Do nothing)",
-                        "Undo last save (Keep your changes)", 
+                        "Undo last save (Keep your changes)",
                         "Discard current changes (DANGER: Deletes unsaved work)"
                     }));
 
@@ -35,13 +35,13 @@ namespace GitBuddy.Commands.Git
             if (choice == "Cancel (Do nothing)")
             {
                 AnsiConsole.MarkupLine("[grey]Operation cancelled.[/]");
-                return Task.FromResult(0);
+                return 0;
             }
 
             if (choice == "Undo last save (Keep your changes)")
             {
                 AnsiConsole.MarkupLine("[grey]Undoing last commit...[/]");
-                _gitService.Run("reset --soft HEAD~1");
+                await _gitService.RunAsync("reset --soft HEAD~1", cancellationToken);
                 AnsiConsole.MarkupLine("[green]✔ Last save undone. Your files are still here, just unstaged.[/]");
             }
             else if (choice == "Discard current changes (DANGER: Deletes unsaved work)")
@@ -49,16 +49,16 @@ namespace GitBuddy.Commands.Git
                 if (!AnsiConsole.Confirm("[red]Are you sure? This will delete all unsaved work permanently.[/]"))
                 {
                     AnsiConsole.MarkupLine("[grey]Phew. Cancelled.[/]");
-                    return Task.FromResult(0);
+                    return 0;
                 }
 
                 AnsiConsole.MarkupLine("[grey]Restoring files to last known good state...[/]");
-                _gitService.Run("restore .");
-                _gitService.Run("clean -fd"); 
+                await _gitService.RunAsync("restore .", cancellationToken);
+                await _gitService.RunAsync("clean -fd", cancellationToken);
                 AnsiConsole.MarkupLine("[green]✔ Changes discarded. You are back to your last save.[/]");
             }
 
-            return Task.FromResult(0);
+            return 0;
         }
     }
 }

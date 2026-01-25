@@ -11,9 +11,14 @@ namespace GitBuddy.Services
             _processRunner = processRunner;
         }
 
-        public string Run(string args, string fileName = "git")
+        public Task<ProcessResult> RunAsync(string args, CancellationToken cancellationToken = default)
         {
-            return _processRunner.Run(fileName, args);
+            return _processRunner.RunAsync("git", args, cancellationToken);
+        }
+
+        public Task<ProcessResult> RunAsync(string args, string fileName, CancellationToken cancellationToken = default)
+        {
+            return _processRunner.RunAsync(fileName, args, cancellationToken);
         }
     }
 }

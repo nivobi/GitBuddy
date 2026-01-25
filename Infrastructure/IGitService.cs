@@ -2,6 +2,7 @@ namespace GitBuddy.Infrastructure
 {
     public interface IGitService
     {
-        string Run(string args, string fileName = "git");
+        Task<ProcessResult> RunAsync(string args, CancellationToken cancellationToken = default);
+        Task<ProcessResult> RunAsync(string args, string fileName, CancellationToken cancellationToken = default);
     }
 }

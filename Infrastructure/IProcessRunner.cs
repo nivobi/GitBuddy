@@ -1,7 +1,10 @@
 namespace GitBuddy.Infrastructure
 {
+    public record ProcessResult(int ExitCode, string Output, string Error);
+
     public interface IProcessRunner
     {
-        string Run(string fileName, string arguments);
+        Task<ProcessResult> RunAsync(string fileName, string arguments, CancellationToken cancellationToken = default);
+        Task<ProcessResult> RunAsync(string fileName, string arguments, int timeoutMs, CancellationToken cancellationToken = default);
     }
 }

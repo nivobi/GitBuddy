@@ -19,28 +19,28 @@ namespace GitBuddy.Commands.Git
         {
         }
 
-        public override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+        public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             AnsiConsole.MarkupLine("[grey]Running git status...[/]");
 
-            string gitOutput = _gitService.Run("status -s");
+            var result = await _gitService.RunAsync("status -s", cancellationToken);
 
-            if (string.IsNullOrWhiteSpace(gitOutput))
+            if (string.IsNullOrWhiteSpace(result.Output))
             {
                 AnsiConsole.MarkupLine("[green]✔ Clean workspace. Nothing to do.[/]");
             }
             else
             {
-                var panel = new Panel(gitOutput);
+                var panel = new Panel(result.Output);
                 panel.Header = new PanelHeader("Current Changes");
-                
-                panel.BorderColor(Spectre.Console.Color.Yellow); 
+
+                panel.BorderColor(Spectre.Console.Color.Yellow);
                 panel.Expand();
 
                 AnsiConsole.Write(panel);
             }
 
-            return Task.FromResult(0);
+            return 0;
         }
     }
 }

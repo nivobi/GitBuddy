@@ -34,7 +34,7 @@ namespace GitBuddy.Infrastructure
         }
     }
 
-    public sealed class TypeResolver : ITypeResolver
+    public sealed class TypeResolver : ITypeResolver, IDisposable
     {
         private readonly IServiceProvider _provider;
 
@@ -46,6 +46,14 @@ namespace GitBuddy.Infrastructure
         public object? Resolve(Type? type)
         {
             return type == null ? null : _provider.GetService(type);
+        }
+
+        public void Dispose()
+        {
+            if (_provider is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
         }
     }
 }
