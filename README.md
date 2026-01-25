@@ -1,5 +1,10 @@
 # GitBuddy 🤖
 
+[![CI](https://github.com/nivobi/GitBuddy/actions/workflows/ci.yml/badge.svg)](https://github.com/nivobi/GitBuddy/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/Nivobi.GitBuddy.svg)](https://www.nuget.org/packages/Nivobi.GitBuddy/)
+[![Downloads](https://img.shields.io/nuget/dt/Nivobi.GitBuddy.svg)](https://www.nuget.org/packages/Nivobi.GitBuddy/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Focus on coding, let GitBuddy handle the chores.**
 
 Git is an amazing tool, but I've always found it to be a lot to manage during a busy day. I built GitBuddy to act as a personal assistant—handling the repetitive parts of the workflow so I can stay focused on my code.
