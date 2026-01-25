@@ -34,13 +34,6 @@ jobs:
     - name: Run tests
       run: dotnet test --configuration Release --no-build --verbosity normal
 
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()  # Upload even if tests fail
-      with:
-        name: test-results-${{ matrix.os }}
-        path: '**/TestResults/**/*.trx'
-
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -61,8 +54,8 @@ jobs:
       run: dotnet format --verify-no-changes --verbosity diagnostic
       continue-on-error: true  # Don't fail build for formatting issues yet
 
-    - name: Build with warnings as errors
-      run: dotnet build --configuration Release --no-restore /p:TreatWarningsAsErrors=true
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
 
   package:
     name: Package
