@@ -34,33 +34,10 @@ jobs:
     - name: Run tests
       run: dotnet test --configuration Release --no-build --verbosity normal
 
-  code-quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '8.0.x'
-
-    - name: Restore dependencies
-      run: dotnet restore
-
-    - name: Check formatting
-      run: dotnet format --verify-no-changes --verbosity diagnostic
-      continue-on-error: true  # Don't fail build for formatting issues yet
-
-    - name: Build
-      run: dotnet build --configuration Release --no-restore
-
   package:
     name: Package
     runs-on: ubuntu-latest
-    needs: [build-and-test, code-quality]
+    needs: [build-and-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
 
     steps:
