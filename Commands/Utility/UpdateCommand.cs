@@ -1,24 +1,37 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
-using System.Diagnostics;
-using System.ComponentModel;
 using System.Threading;
+using System.Threading.Tasks;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Utility
 {
-    public class UpdateCommand : Command<UpdateCommand.Settings>
+    public class UpdateCommand : AsyncCommand<UpdateCommand.Settings>
     {
-        public class Settings : CommandSettings 
-        { 
+        private readonly IProcessRunner _processRunner;
+
+        public UpdateCommand(IProcessRunner processRunner)
+        {
+            _processRunner = processRunner;
         }
 
-        public override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
+        public class Settings : CommandSettings
+        {
+        }
+
+        public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             AnsiConsole.MarkupLine("[bold blue]Checking for GitBuddy updates...[/]");
 
-            var (success, output) = CheckForUpdate();
+            ProcessResult result = null!;
+            await AnsiConsole.Status().StartAsync("Checking for updates...", async ctx =>
+            {
+                result = await _processRunner.RunAsync("dotnet", "tool update -g Nivobi.GitBuddy", cancellationToken);
+            });
 
-            if (success && output.Contains("was successfully updated"))
+            var output = result.Output + result.Error;
+
+            if (result.ExitCode == 0 && output.Contains("was successfully updated"))
             {
                 AnsiConsole.Progress()
                     .AutoClear(false)
@@ -38,38 +51,13 @@ namespace GitBuddy.Commands.Utility
             else
             {
                 AnsiConsole.MarkupLine("[yellow]⚠[/] Unable to check for updates. Please try again later.");
+                if (!string.IsNullOrWhiteSpace(result.Error))
+                {
+                    AnsiConsole.MarkupLine($"[grey]{result.Error}[/]");
+                }
             }
 
             return 0;
-        }
-
-        private static (bool success, string output) CheckForUpdate()
-        {
-            try
-            {
-                var processInfo = new ProcessStartInfo
-                {
-                    FileName = "dotnet",
-                    Arguments = "tool update -g Nivobi.GitBuddy",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using var process = Process.Start(processInfo);
-                if (process == null) return (false, string.Empty);
-
-                var output = process.StandardOutput.ReadToEnd();
-                var error = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-
-                return (process.ExitCode == 0, output + error);
-            }
-            catch
-            {
-                return (false, string.Empty);
-            }
         }
     }
 }
