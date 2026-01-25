@@ -38,7 +38,7 @@ namespace GitBuddy.Commands.Git
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
             // Check if we're in a git repository
-            if (!await IsGitRepositoryAsync(cancellationToken))
+            if (!await _gitService.IsGitRepositoryAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Not in a git repository.");
                 AnsiConsole.MarkupLine("[grey]Try running this command from inside a git repository.[/]");
@@ -55,12 +55,6 @@ namespace GitBuddy.Commands.Git
                 "list" => await ListStashes(cancellationToken),
                 _ => await ListStashes(cancellationToken) // Default to list for unknown actions
             };
-        }
-
-        private async Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken)
-        {
-            var result = await _gitService.RunAsync("rev-parse --is-inside-work-tree", cancellationToken);
-            return result.Output.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task<int> PushStash(Settings settings, CancellationToken cancellationToken)

@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using GitBuddy.Infrastructure;
+using Spectre.Console;
 
 namespace GitBuddy.Services
 {
@@ -18,15 +19,17 @@ namespace GitBuddy.Services
     public class ConfigManager : IConfigManager
     {
         private readonly IFileSystem _fileSystem;
+        private readonly IAnsiConsole _console;
 
         private string ConfigPath => _fileSystem.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "GitBuddy",
             "config.json");
 
-        public ConfigManager(IFileSystem fileSystem)
+        public ConfigManager(IFileSystem fileSystem, IAnsiConsole console)
         {
             _fileSystem = fileSystem;
+            _console = console;
         }
 
         public void SaveConfig(string provider, string model, string rawKey)
@@ -54,15 +57,41 @@ namespace GitBuddy.Services
             {
                 string json = _fileSystem.File.ReadAllText(ConfigPath);
                 var config = JsonSerializer.Deserialize<AppConfig>(json);
-                
+
                 string provider = config?.AiProvider ?? "openai";
                 string model = config?.AiModel ?? "gpt-4o-mini";
                 string decryptedKey = Decrypt(config?.EncryptedApiKey ?? "");
 
                 return (provider, model, decryptedKey);
             }
-            catch
+            catch (JsonException ex)
             {
+                _console.MarkupLine("[yellow]⚠ Warning:[/] Config file is corrupted.");
+                _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
+                _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
+                _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
+                return ("openai", "gpt-4o-mini", "");
+            }
+            catch (IOException ex)
+            {
+                _console.MarkupLine("[yellow]⚠ Warning:[/] Could not read config file.");
+                _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
+                _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
+                _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
+                return ("openai", "gpt-4o-mini", "");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                _console.MarkupLine("[yellow]⚠ Warning:[/] Permission denied reading config file.");
+                _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
+                _console.MarkupLine("[grey]Check file permissions. Using default config.[/]");
+                return ("openai", "gpt-4o-mini", "");
+            }
+            catch (Exception ex)
+            {
+                _console.MarkupLine("[yellow]⚠ Warning:[/] Unexpected error loading config.");
+                _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
+                _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
                 return ("openai", "gpt-4o-mini", "");
             }
         }
@@ -83,7 +112,7 @@ namespace GitBuddy.Services
             }
         }
 
-        private static string Decrypt(string encryptedText)
+        private string Decrypt(string encryptedText)
         {
             if (string.IsNullOrEmpty(encryptedText)) return string.Empty;
             if (encryptedText.StartsWith("BASE64_FALLBACK:"))
@@ -97,7 +126,22 @@ namespace GitBuddy.Services
                 byte[] decrypted = ProtectedData.Unprotect(data, null, DataProtectionScope.CurrentUser);
                 return Encoding.UTF8.GetString(decrypted);
             }
-            catch { return string.Empty; }
+            catch (CryptographicException)
+            {
+                _console.MarkupLine("[yellow]⚠ Warning:[/] Failed to decrypt API key. It may have been encrypted on a different machine.");
+                _console.MarkupLine("[grey]Run[/] [blue]buddy config[/] [grey]to reset your API key.[/]");
+                return string.Empty;
+            }
+            catch (FormatException)
+            {
+                _console.MarkupLine("[yellow]⚠ Warning:[/] Config file contains invalid encrypted data.");
+                _console.MarkupLine("[grey]Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
+                return string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
     }
 }

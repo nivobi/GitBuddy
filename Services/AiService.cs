@@ -124,7 +124,9 @@ namespace GitBuddy.Services
 
                 request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.SendAsync(request);
+                // Add 30-second timeout to prevent hanging on slow AI API calls
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var response = await _httpClient.SendAsync(request, cts.Token);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -152,6 +154,12 @@ namespace GitBuddy.Services
                 string responseString = await response.Content.ReadAsStringAsync();
                 using JsonDocument doc = JsonDocument.Parse(responseString);
                 return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()?.Trim();
+            }
+            catch (TaskCanceledException)
+            {
+                _console.MarkupLine($"[red]✗ Timeout Error:[/] {provider} API did not respond within 30 seconds.");
+                _console.MarkupLine("[grey]The API might be overloaded. Please try again.[/]");
+                return null;
             }
             catch (HttpRequestException ex)
             {
