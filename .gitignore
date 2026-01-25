@@ -488,5 +488,8 @@ config.json
 .buddyconfig
 secrets.json
 
+# Planning files
+.planning/
+
 # Claude Code
 .claude
