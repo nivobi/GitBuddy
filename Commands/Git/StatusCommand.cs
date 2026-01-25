@@ -2,12 +2,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using GitBuddy.Services;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Git
 {
     public class StatusCommand : AsyncCommand<StatusCommand.Settings>
     {
+        private readonly IGitService _gitService;
+
+        public StatusCommand(IGitService gitService)
+        {
+            _gitService = gitService;
+        }
+
         public class Settings : CommandSettings
         {
         }
@@ -16,7 +23,7 @@ namespace GitBuddy.Commands.Git
         {
             AnsiConsole.MarkupLine("[grey]Running git status...[/]");
 
-            string gitOutput = GitService.Run("status -s");
+            string gitOutput = _gitService.Run("status -s");
 
             if (string.IsNullOrWhiteSpace(gitOutput))
             {

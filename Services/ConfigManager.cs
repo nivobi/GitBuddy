@@ -1,29 +1,39 @@
 using System;
 using System.IO;
+using System.IO.Abstractions;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Services
 {
     public class AppConfig
     {
         public string AiProvider { get; set; } = "openai";
-        public string AiModel { get; set; } = "gpt-4o-mini"; 
+        public string AiModel { get; set; } = "gpt-4o-mini";
         public string EncryptedApiKey { get; set; } = string.Empty;
     }
 
-    public static class ConfigManager
+    public class ConfigManager : IConfigManager
     {
-        private static string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-            "GitBuddy", 
+        private readonly IFileSystem _fileSystem;
+
+        private string ConfigPath => _fileSystem.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "GitBuddy",
             "config.json");
 
-        public static void SaveConfig(string provider, string model, string rawKey)
+        public ConfigManager(IFileSystem fileSystem)
         {
-            var directory = Path.GetDirectoryName(ConfigPath);
-            if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
+            _fileSystem = fileSystem;
+        }
+
+        public void SaveConfig(string provider, string model, string rawKey)
+        {
+            var directory = _fileSystem.Path.GetDirectoryName(ConfigPath);
+            if (!_fileSystem.Directory.Exists(directory))
+                _fileSystem.Directory.CreateDirectory(directory);
 
             var config = new AppConfig
             {
@@ -33,16 +43,16 @@ namespace GitBuddy.Services
             };
 
             string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ConfigPath, json);
+            _fileSystem.File.WriteAllText(ConfigPath, json);
         }
 
-        public static (string Provider, string Model, string ApiKey) LoadConfig()
+        public (string Provider, string Model, string ApiKey) LoadConfig()
         {
-            if (!File.Exists(ConfigPath)) return ("openai", "gpt-4o-mini", "");
+            if (!_fileSystem.File.Exists(ConfigPath)) return ("openai", "gpt-4o-mini", "");
 
-            try 
+            try
             {
-                string json = File.ReadAllText(ConfigPath);
+                string json = _fileSystem.File.ReadAllText(ConfigPath);
                 var config = JsonSerializer.Deserialize<AppConfig>(json);
                 
                 string provider = config?.AiProvider ?? "openai";

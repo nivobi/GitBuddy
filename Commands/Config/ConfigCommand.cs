@@ -2,12 +2,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using GitBuddy.Services;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Config
 {
     public class ConfigCommand : AsyncCommand<ConfigCommand.Settings>
     {
+        private readonly IConfigManager _configManager;
+
+        public ConfigCommand(IConfigManager configManager)
+        {
+            _configManager = configManager;
+        }
+
         public class Settings : CommandSettings
         {
         }
@@ -17,7 +24,7 @@ namespace GitBuddy.Commands.Config
             AnsiConsole.Write(new FigletText("Git Buddy").Color(Spectre.Console.Color.Blue));
 
             // 1. Load existing config to see if we have a key saved
-            var existingConfig = ConfigManager.LoadConfig();
+            var existingConfig = _configManager.LoadConfig();
             string? apiKey = null;
 
             // 2. SELECT PROVIDER
@@ -76,7 +83,7 @@ namespace GitBuddy.Commands.Config
             // 5. SAVE
             AnsiConsole.Status().Start("Updating configuration...", ctx => 
             {
-                ConfigManager.SaveConfig(providerCode, modelCode, apiKey);
+                _configManager.SaveConfig(providerCode, modelCode, apiKey);
                 Thread.Sleep(500);
             });
 

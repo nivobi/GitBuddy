@@ -3,12 +3,23 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using GitBuddy.Services;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Git
 {
     public class MergeCommand : AsyncCommand<MergeCommand.Settings>
     {
+        private readonly IGitService _gitService;
+        private readonly IConfigManager _configManager;
+        private readonly IAiService _aiService;
+
+        public MergeCommand(IGitService gitService, IConfigManager configManager, IAiService aiService)
+        {
+            _gitService = gitService;
+            _configManager = configManager;
+            _aiService = aiService;
+        }
+
         public class Settings : CommandSettings
         {
             [CommandArgument(0, "[branch]")]
@@ -35,7 +46,7 @@ namespace GitBuddy.Commands.Git
             }
 
             // Get current branch
-            string currentBranch = GitService.Run("branch --show-current");
+            string currentBranch = _gitService.Run("branch --show-current");
             if (string.IsNullOrWhiteSpace(currentBranch))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Could not determine current branch.");
@@ -86,14 +97,14 @@ namespace GitBuddy.Commands.Git
             }
 
             // Check if branches exist
-            var sourceCheck = GitService.Run($"rev-parse --verify {sourceBranch}");
+            var sourceCheck = _gitService.Run($"rev-parse --verify {sourceBranch}");
             if (sourceCheck.Contains("fatal"))
             {
                 AnsiConsole.MarkupLine($"[red]✗ Error:[/] Branch [blue]{sourceBranch}[/] does not exist.");
                 return 1;
             }
 
-            var targetCheck = GitService.Run($"rev-parse --verify {targetBranch}");
+            var targetCheck = _gitService.Run($"rev-parse --verify {targetBranch}");
             if (targetCheck.Contains("fatal"))
             {
                 AnsiConsole.MarkupLine($"[red]✗ Error:[/] Branch [blue]{targetBranch}[/] does not exist.");
@@ -105,7 +116,7 @@ namespace GitBuddy.Commands.Git
             AnsiConsole.WriteLine();
 
             // Check for uncommitted changes
-            var statusCheck = GitService.Run("status --porcelain");
+            var statusCheck = _gitService.Run("status --porcelain");
             if (!string.IsNullOrWhiteSpace(statusCheck))
             {
                 AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
@@ -131,7 +142,7 @@ namespace GitBuddy.Commands.Git
             {
                 AnsiConsole.Status().Start($"Switching to [blue]{targetBranch}[/]...", ctx =>
                 {
-                    var switchResult = GitService.Run($"checkout {targetBranch}");
+                    var switchResult = _gitService.Run($"checkout {targetBranch}");
                     if (switchResult.Contains("error:") || switchResult.Contains("fatal:"))
                     {
                         AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult}");
@@ -148,7 +159,7 @@ namespace GitBuddy.Commands.Git
         {
             return await Task.Run(() =>
             {
-                var branchOutput = GitService.Run("branch -a");
+                var branchOutput = _gitService.Run("branch -a");
                 if (string.IsNullOrWhiteSpace(branchOutput))
                 {
                     AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
@@ -184,8 +195,8 @@ namespace GitBuddy.Commands.Git
             await Task.Run(() =>
             {
                 // Check if it's a fast-forward merge
-                var mergeBase = GitService.Run($"merge-base {currentBranch} {branchToMerge}");
-                var currentCommit = GitService.Run($"rev-parse {currentBranch}");
+                var mergeBase = _gitService.Run($"merge-base {currentBranch} {branchToMerge}");
+                var currentCommit = _gitService.Run($"rev-parse {currentBranch}");
 
                 bool isFastForward = mergeBase.Trim() == currentCommit.Trim();
 
@@ -199,7 +210,7 @@ namespace GitBuddy.Commands.Git
                 }
 
                 // Show commits that will be merged
-                var commits = GitService.Run($"log {currentBranch}..{branchToMerge} --oneline --max-count=10");
+                var commits = _gitService.Run($"log {currentBranch}..{branchToMerge} --oneline --max-count=10");
 
                 if (!string.IsNullOrWhiteSpace(commits))
                 {
@@ -215,7 +226,7 @@ namespace GitBuddy.Commands.Git
                     AnsiConsole.Write(table);
 
                     // Check if there are more commits
-                    var totalCommits = GitService.Run($"rev-list --count {currentBranch}..{branchToMerge}");
+                    var totalCommits = _gitService.Run($"rev-list --count {currentBranch}..{branchToMerge}");
                     if (int.TryParse(totalCommits.Trim(), out int count) && count > 10)
                     {
                         AnsiConsole.MarkupLine($"[grey]... and {count - 10} more commit(s)[/]");
@@ -237,7 +248,7 @@ namespace GitBuddy.Commands.Git
             {
                 await Task.Run(() =>
                 {
-                    mergeResult = GitService.Run($"merge {branchToMerge} {mergeFlags}");
+                    mergeResult = _gitService.Run($"merge {branchToMerge} {mergeFlags}");
                     hasConflicts = mergeResult.Contains("CONFLICT") || mergeResult.Contains("Automatic merge failed");
                     wasFastForward = mergeResult.Contains("Fast-forward") && !useAi;
                 });
@@ -272,7 +283,7 @@ namespace GitBuddy.Commands.Git
 
                     if (choice == "✖ Cancel")
                     {
-                        GitService.Run("merge --abort");
+                        _gitService.Run("merge --abort");
                         AnsiConsole.MarkupLine("[red]Merge cancelled.[/]");
                         return 0;
                     }
@@ -283,13 +294,13 @@ namespace GitBuddy.Commands.Git
                     }
 
                     // Commit with the AI message
-                    GitService.Run($"commit -m \"{aiMessage.Replace("\"", "\\\"")}\"");
+                    _gitService.Run($"commit -m \"{aiMessage.Replace("\"", "\\\"")}\"");
                     AnsiConsole.MarkupLine($"[green]✓ Merge complete with AI-generated message![/]");
                 }
                 else
                 {
                     // Fallback: commit with default message
-                    GitService.Run($"commit --no-edit");
+                    _gitService.Run($"commit --no-edit");
                     AnsiConsole.MarkupLine($"[green]✓ Merge complete![/]");
                     AnsiConsole.MarkupLine("[grey]AI message generation failed, used default message.[/]");
                 }
@@ -297,7 +308,7 @@ namespace GitBuddy.Commands.Git
             else
             {
                 AnsiConsole.MarkupLine($"[green]✓ Merge complete![/]");
-                var lastCommit = GitService.Run("log -1 --pretty=%B");
+                var lastCommit = _gitService.Run("log -1 --pretty=%B");
                 AnsiConsole.MarkupLine($"[grey]Merge commit:[/] {lastCommit}");
             }
 
@@ -312,7 +323,7 @@ namespace GitBuddy.Commands.Git
         {
             try
             {
-                var (provider, model, apiKey) = ConfigManager.LoadConfig();
+                var (provider, model, apiKey) = _configManager.LoadConfig();
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
@@ -321,7 +332,7 @@ namespace GitBuddy.Commands.Git
                 }
 
                 // Get the diff of what's being merged
-                string diff = GitService.Run($"diff {targetBranch}...{sourceBranch}");
+                string diff = _gitService.Run($"diff {targetBranch}...{sourceBranch}");
 
                 if (string.IsNullOrWhiteSpace(diff))
                 {
@@ -329,7 +340,7 @@ namespace GitBuddy.Commands.Git
                 }
 
                 // Get list of commits being merged
-                string commits = GitService.Run($"log {targetBranch}..{sourceBranch} --oneline");
+                string commits = _gitService.Run($"log {targetBranch}..{sourceBranch} --oneline");
 
                 string context = $"Commits being merged:\n{commits}\n\nChanges:\n{diff}";
 
@@ -337,7 +348,7 @@ namespace GitBuddy.Commands.Git
 
                 await AnsiConsole.Status().StartAsync("[blue]AI is generating merge message...[/]", async ctx =>
                 {
-                    aiMessage = await AiService.GenerateCommitMessage(context);
+                    aiMessage = await _aiService.GenerateCommitMessage(context);
                 });
 
                 return aiMessage;
@@ -357,7 +368,7 @@ namespace GitBuddy.Commands.Git
                 AnsiConsole.WriteLine();
 
                 // Get list of conflicted files
-                var conflictedFiles = GitService.Run("diff --name-only --diff-filter=U");
+                var conflictedFiles = _gitService.Run("diff --name-only --diff-filter=U");
 
                 if (!string.IsNullOrWhiteSpace(conflictedFiles))
                 {
@@ -386,12 +397,12 @@ namespace GitBuddy.Commands.Git
 
                 if (choice.StartsWith("Abort"))
                 {
-                    GitService.Run("merge --abort");
+                    _gitService.Run("merge --abort");
                     AnsiConsole.MarkupLine("[yellow]Merge aborted. Your branch is back to its previous state.[/]");
                 }
                 else if (choice.StartsWith("Show"))
                 {
-                    var conflicts = GitService.Run("diff --diff-filter=U");
+                    var conflicts = _gitService.Run("diff --diff-filter=U");
                     var panel = new Panel(conflicts.Length > 1000 ? conflicts.Substring(0, 1000) + "\n..." : conflicts);
                     panel.Header = new PanelHeader("Conflict Details");
                     panel.BorderColor(Color.Red);
@@ -415,9 +426,9 @@ namespace GitBuddy.Commands.Git
             return 1;
         }
 
-        private static bool IsGitRepository()
+        private bool IsGitRepository()
         {
-            var result = GitService.Run("rev-parse --is-inside-work-tree");
+            var result = _gitService.Run("rev-parse --is-inside-work-tree");
             return result.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
     }

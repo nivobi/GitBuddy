@@ -3,12 +3,19 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using GitBuddy.Services;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Git
 {
     public class BranchCommand : AsyncCommand<BranchCommand.Settings>
     {
+        private readonly IGitService _gitService;
+
+        public BranchCommand(IGitService gitService)
+        {
+            _gitService = gitService;
+        }
+
         public class Settings : CommandSettings
         {
             [CommandArgument(0, "[action]")]
@@ -48,9 +55,9 @@ namespace GitBuddy.Commands.Git
             };
         }
 
-        private static bool IsGitRepository()
+        private bool IsGitRepository()
         {
-            var result = GitService.Run("rev-parse --is-inside-work-tree");
+            var result = _gitService.Run("rev-parse --is-inside-work-tree");
             return result.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -83,7 +90,7 @@ namespace GitBuddy.Commands.Git
             {
                 AnsiConsole.Status().Start($"Creating branch [blue]{fullBranchName}[/]...", ctx =>
                 {
-                    var result = GitService.Run($"checkout -b {fullBranchName}");
+                    var result = _gitService.Run($"checkout -b {fullBranchName}");
 
                     if (result.Contains("Switched to a new branch") || result.Contains("switched to a new branch"))
                     {
@@ -104,7 +111,7 @@ namespace GitBuddy.Commands.Git
             await Task.Run(() =>
             {
                 // Get all branches
-                var branchOutput = GitService.Run("branch -a");
+                var branchOutput = _gitService.Run("branch -a");
                 if (string.IsNullOrWhiteSpace(branchOutput))
                 {
                     AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
@@ -135,7 +142,7 @@ namespace GitBuddy.Commands.Git
                         .AddChoices(branches));
 
                 // Check for uncommitted changes first
-                var statusCheck = GitService.Run("status --porcelain");
+                var statusCheck = _gitService.Run("status --porcelain");
                 if (!string.IsNullOrWhiteSpace(statusCheck))
                 {
                     AnsiConsole.MarkupLine("[yellow]⚠[/] You have uncommitted changes.");
@@ -147,7 +154,7 @@ namespace GitBuddy.Commands.Git
                 // Switch to selected branch
                 AnsiConsole.Status().Start($"Switching to [blue]{selectedBranch}[/]...", ctx =>
                 {
-                    var result = GitService.Run($"checkout {selectedBranch}");
+                    var result = _gitService.Run($"checkout {selectedBranch}");
 
                     // Check for actual errors rather than specific success messages
                     if (result.Contains("error:") || result.Contains("fatal:"))
@@ -168,8 +175,8 @@ namespace GitBuddy.Commands.Git
         {
             await Task.Run(() =>
             {
-                var currentBranch = GitService.Run("branch --show-current");
-                var branchOutput = GitService.Run("branch -vv");
+                var currentBranch = _gitService.Run("branch --show-current");
+                var branchOutput = _gitService.Run("branch -vv");
 
                 if (string.IsNullOrWhiteSpace(branchOutput))
                 {
@@ -225,10 +232,10 @@ namespace GitBuddy.Commands.Git
                 AnsiConsole.MarkupLine("[blue]Checking for merged branches...[/]");
 
                 // Get current branch
-                var currentBranch = GitService.Run("branch --show-current");
+                var currentBranch = _gitService.Run("branch --show-current");
 
                 // Get merged branches (excluding current and main/master)
-                var mergedOutput = GitService.Run("branch --merged");
+                var mergedOutput = _gitService.Run("branch --merged");
                 var mergedBranches = mergedOutput
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
@@ -269,7 +276,7 @@ namespace GitBuddy.Commands.Git
                 var deletedCount = 0;
                 foreach (var branch in mergedBranches)
                 {
-                    var result = GitService.Run($"branch -d {branch}");
+                    var result = _gitService.Run($"branch -d {branch}");
                     if (result.Contains("Deleted branch"))
                     {
                         AnsiConsole.MarkupLine($"[green]✓[/] Deleted [grey]{branch}[/]");
@@ -291,12 +298,12 @@ namespace GitBuddy.Commands.Git
         {
             await Task.Run(() =>
             {
-                var currentBranch = GitService.Run("branch --show-current");
+                var currentBranch = _gitService.Run("branch --show-current");
 
                 if (string.IsNullOrWhiteSpace(name))
                 {
                     // Interactive selection - include ALL branches including current
-                    var branchOutput = GitService.Run("branch");
+                    var branchOutput = _gitService.Run("branch");
 
                     if (string.IsNullOrWhiteSpace(branchOutput))
                     {
@@ -330,7 +337,7 @@ namespace GitBuddy.Commands.Git
                     AnsiConsole.MarkupLine($"[yellow]ℹ[/] You're currently on [blue]{name}[/]");
 
                     // Find a branch to switch to (prefer master/main)
-                    var allBranches = GitService.Run("branch")
+                    var allBranches = _gitService.Run("branch")
                         .Split('\n')
                         .Select(b => b.Trim().TrimStart('*').Trim())
                         .Where(b => !string.IsNullOrWhiteSpace(b) && b != currentBranch)
@@ -353,7 +360,7 @@ namespace GitBuddy.Commands.Git
                     }
 
                     // Switch to target branch
-                    var switchResult = GitService.Run($"checkout {targetBranch}");
+                    var switchResult = _gitService.Run($"checkout {targetBranch}");
                     if (switchResult.Contains("error:") || switchResult.Contains("fatal:"))
                     {
                         AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult}");
@@ -371,7 +378,7 @@ namespace GitBuddy.Commands.Git
                 }
 
                 // Try safe delete first (-d), which prevents deleting unmerged branches
-                var result = GitService.Run($"branch -d {name}");
+                var result = _gitService.Run($"branch -d {name}");
 
                 if (result.Contains("Deleted branch"))
                 {
@@ -383,7 +390,7 @@ namespace GitBuddy.Commands.Git
 
                     if (AnsiConsole.Confirm("Force delete anyway? [red](You may lose commits!)[/]", false))
                     {
-                        result = GitService.Run($"branch -D {name}");
+                        result = _gitService.Run($"branch -D {name}");
                         if (result.Contains("Deleted branch"))
                         {
                             AnsiConsole.MarkupLine($"[green]✓[/] Force deleted branch [grey]{name}[/]");
@@ -407,7 +414,7 @@ namespace GitBuddy.Commands.Git
         {
             await Task.Run(() =>
             {
-                var currentBranch = GitService.Run("branch --show-current");
+                var currentBranch = _gitService.Run("branch --show-current");
 
                 // If no old name specified, assume renaming current branch
                 if (string.IsNullOrWhiteSpace(oldName))
@@ -425,7 +432,7 @@ namespace GitBuddy.Commands.Git
                 bool isCurrentBranch = oldName == currentBranch;
 
                 string moveFlag = isCurrentBranch ? "-m" : "-m";
-                var result = GitService.Run($"branch {moveFlag} {oldName} {newName}");
+                var result = _gitService.Run($"branch {moveFlag} {oldName} {newName}");
 
                 if (result.Contains("Renamed") || result.Contains("renamed") || string.IsNullOrWhiteSpace(result))
                 {

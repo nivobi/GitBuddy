@@ -1,9 +1,14 @@
-﻿using System.Reflection;
+﻿using System.IO.Abstractions;
+using System.Net.Http;
+using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Commands.Git;
 using GitBuddy.Commands.Config;
 using GitBuddy.Commands.Utility;
+using GitBuddy.Infrastructure;
+using GitBuddy.Services;
 
 namespace GitBuddy
 {
@@ -11,7 +16,23 @@ namespace GitBuddy
     {
         static int Main(string[] args)
         {
-            var app = new CommandApp();
+            // Create service collection
+            var services = new ServiceCollection();
+
+            // Register infrastructure services
+            services.AddSingleton<IFileSystem, FileSystem>();
+            services.AddSingleton<IProcessRunner, ProcessRunner>();
+            services.AddSingleton<HttpClient>();
+            services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
+
+            // Register application services
+            services.AddSingleton<IConfigManager, ConfigManager>();
+            services.AddSingleton<IGitService, GitService>();
+            services.AddSingleton<IAiService, AiService>();
+
+            // Create registrar and app
+            var registrar = new TypeRegistrar(services);
+            var app = new CommandApp(registrar);
 
             app.Configure(config =>
             {

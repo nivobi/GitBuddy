@@ -1,29 +1,47 @@
 using System;
 using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Spectre.Console;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Services
 {
-    public static class AiService
+    public class AiService : IAiService
     {
-        // Reuse a single HttpClient instance to prevent socket exhaustion
-        private static readonly HttpClient _httpClient = new HttpClient();
-        public static async Task<string?> GenerateCommitMessage(string diff)
+        private readonly IAnsiConsole _console;
+        private readonly IFileSystem _fileSystem;
+        private readonly IConfigManager _configManager;
+        private readonly HttpClient _httpClient;
+
+        public AiService(
+            IAnsiConsole console,
+            IFileSystem fileSystem,
+            IConfigManager configManager,
+            HttpClient httpClient)
         {
-            var (provider, model, apiKey) = ConfigManager.LoadConfig();
+            _console = console;
+            _fileSystem = fileSystem;
+            _configManager = configManager;
+            _httpClient = httpClient;
+        }
+
+        public async Task<string?> GenerateCommitMessage(string diff)
+        {
+            var (provider, model, apiKey) = _configManager.LoadConfig();
             if (string.IsNullOrEmpty(apiKey))
             {
-                AnsiConsole.MarkupLine("[yellow]⚠ No AI configured.[/] Run [blue]buddy config[/] to set up AI features.");
+                _console.MarkupLine("[yellow]⚠ No AI configured.[/] Run [blue]buddy config[/] to set up AI features.");
                 return null;
             }
 
             string projectContext = "a software project";
-            if (File.Exists(".buddycontext")) projectContext = File.ReadAllText(".buddycontext").Trim();
+            if (_fileSystem.File.Exists(".buddycontext"))
+                projectContext = _fileSystem.File.ReadAllText(".buddycontext").Trim();
 
             string apiUrl = GetApiUrl(provider);
 
@@ -46,12 +64,12 @@ namespace GitBuddy.Services
             return await SendAiRequest(apiUrl, provider, apiKey, requestData);
         }
 
-        public static async Task<string?> DescribeProject(string projectData)
+        public async Task<string?> DescribeProject(string projectData)
         {
-            var (provider, model, apiKey) = ConfigManager.LoadConfig();
+            var (provider, model, apiKey) = _configManager.LoadConfig();
             if (string.IsNullOrEmpty(apiKey))
             {
-                AnsiConsole.MarkupLine("[yellow]⚠ No AI configured.[/] Run [blue]buddy config[/] to set up AI features.");
+                _console.MarkupLine("[yellow]⚠ No AI configured.[/] Run [blue]buddy config[/] to set up AI features.");
                 return null;
             }
 
@@ -88,7 +106,7 @@ namespace GitBuddy.Services
             };
         }
 
-        private static async Task<string?> SendAiRequest(string apiUrl, string provider, string apiKey, object requestData)
+        private async Task<string?> SendAiRequest(string apiUrl, string provider, string apiKey, object requestData)
         {
             try
             {
@@ -114,18 +132,18 @@ namespace GitBuddy.Services
 
                     if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     {
-                        AnsiConsole.MarkupLine("[red]✗ AI Error:[/] Invalid API key. Run [yellow]buddy config[/] to update your credentials.");
+                        _console.MarkupLine("[red]✗ AI Error:[/] Invalid API key. Run [yellow]buddy config[/] to update your credentials.");
                     }
                     else if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                     {
-                        AnsiConsole.MarkupLine("[red]✗ AI Error:[/] Rate limit exceeded. Please try again in a few moments.");
+                        _console.MarkupLine("[red]✗ AI Error:[/] Rate limit exceeded. Please try again in a few moments.");
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[red]✗ AI Error:[/] {provider} API returned {response.StatusCode}");
+                        _console.MarkupLine($"[red]✗ AI Error:[/] {provider} API returned {response.StatusCode}");
                         if (!string.IsNullOrWhiteSpace(errorBody) && errorBody.Length < 200)
                         {
-                            AnsiConsole.MarkupLine($"[grey]Details: {errorBody.EscapeMarkup()}[/]");
+                            _console.MarkupLine($"[grey]Details: {errorBody.EscapeMarkup()}[/]");
                         }
                     }
                     return null;
@@ -137,20 +155,20 @@ namespace GitBuddy.Services
             }
             catch (HttpRequestException ex)
             {
-                AnsiConsole.MarkupLine($"[red]✗ Network Error:[/] Unable to connect to {provider}. Check your internet connection.");
-                AnsiConsole.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
+                _console.MarkupLine($"[red]✗ Network Error:[/] Unable to connect to {provider}. Check your internet connection.");
+                _console.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
                 return null;
             }
             catch (JsonException ex)
             {
-                AnsiConsole.MarkupLine($"[red]✗ AI Error:[/] Received invalid response from {provider}.");
-                AnsiConsole.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
+                _console.MarkupLine($"[red]✗ AI Error:[/] Received invalid response from {provider}.");
+                _console.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
                 return null;
             }
             catch (Exception ex)
             {
-                AnsiConsole.MarkupLine($"[red]✗ Unexpected Error:[/] {ex.Message.EscapeMarkup()}");
-                AnsiConsole.MarkupLine("[grey]Please report this issue if it persists.[/]");
+                _console.MarkupLine($"[red]✗ Unexpected Error:[/] {ex.Message.EscapeMarkup()}");
+                _console.MarkupLine("[grey]Please report this issue if it persists.[/]");
                 return null;
             }
         }

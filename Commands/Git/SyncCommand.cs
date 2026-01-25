@@ -5,12 +5,19 @@ using Spectre.Console.Cli;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using GitBuddy.Services;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Git
 {
     public class SyncCommand : AsyncCommand<SyncCommand.Settings>
     {
+        private readonly IGitService _gitService;
+
+        public SyncCommand(IGitService gitService)
+        {
+            _gitService = gitService;
+        }
+
         public class Settings : CommandSettings { }
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
@@ -18,7 +25,7 @@ namespace GitBuddy.Commands.Git
             AnsiConsole.Write(new Rule("[blue]Cloud Sync[/]"));
 
             // 1. Check if a remote is linked
-            string remotes = GitService.Run("remote");
+            string remotes = _gitService.Run("remote");
             
             if (string.IsNullOrWhiteSpace(remotes))
             {
@@ -30,7 +37,7 @@ namespace GitBuddy.Commands.Git
             string errorDetails = "";
 
             // Get current branch name
-            string currentBranch = GitService.Run("branch --show-current");
+            string currentBranch = _gitService.Run("branch --show-current");
             if (string.IsNullOrWhiteSpace(currentBranch))
             {
                 AnsiConsole.MarkupLine("[red]✗[/] Could not determine current branch.");
@@ -38,7 +45,7 @@ namespace GitBuddy.Commands.Git
             }
 
             // Get remote URL for display
-            string remoteUrl = GitService.Run("remote get-url origin");
+            string remoteUrl = _gitService.Run("remote get-url origin");
             string repoDisplay = remoteUrl.Replace("https://github.com/", "").Replace(".git", "").Trim();
             if (repoDisplay.Contains("git@github.com:"))
             {
@@ -54,7 +61,7 @@ namespace GitBuddy.Commands.Git
                 await Task.Run(() => {
                     ctx.Status($"Checking connection to {repoDisplay}...");
                     // Test the remote connection by trying to fetch
-                    string testResult = GitService.Run("ls-remote origin");
+                    string testResult = _gitService.Run("ls-remote origin");
 
                     if (testResult.Contains("not found") || testResult.Contains("fatal"))
                     {
@@ -65,7 +72,7 @@ namespace GitBuddy.Commands.Git
 
                     ctx.Status($"Pulling latest changes from origin/{currentBranch}...");
                     // Try to pull, but don't fail if the branch doesn't exist on remote yet
-                    string pullOutput = GitService.Run($"pull origin {currentBranch} --rebase");
+                    string pullOutput = _gitService.Run($"pull origin {currentBranch} --rebase");
 
                     // It's okay if pull fails because the branch doesn't exist remotely yet
                     bool isNewBranch = pullOutput.Contains("couldn't find remote ref", StringComparison.OrdinalIgnoreCase);
@@ -87,7 +94,7 @@ namespace GitBuddy.Commands.Git
                         ctx.Status($"Pushing changes to origin/{currentBranch}...");
                     }
 
-                    string pushOutput = GitService.Run($"push -u origin {currentBranch}");
+                    string pushOutput = _gitService.Run($"push -u origin {currentBranch}");
 
                     if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
                     {
@@ -105,7 +112,7 @@ namespace GitBuddy.Commands.Git
                 {
                     if (AnsiConsole.Confirm("[yellow]The remote repository seems to be missing. Remove the dead link and re-create it?[/]"))
                     {
-                        GitService.Run("remote remove origin");
+                        _gitService.Run("remote remove origin");
                         return await HandleNewRepoFlow();
                     }
                 }
@@ -131,7 +138,7 @@ namespace GitBuddy.Commands.Git
             await Task.Run(() =>
             {
                 // Get merged branches (excluding current and main/master)
-                var mergedOutput = GitService.Run("branch --merged");
+                var mergedOutput = _gitService.Run("branch --merged");
                 var mergedBranches = mergedOutput
                     .Split('\n')
                     .Select(b => b.Trim().TrimStart('*').Trim())
@@ -162,7 +169,7 @@ namespace GitBuddy.Commands.Git
                     {
                         // Delete local branch - use -D since we already verified it's merged to HEAD
                         // The -d flag checks remote tracking which may not be updated yet
-                        var localResult = GitService.Run($"branch -D {branch}");
+                        var localResult = _gitService.Run($"branch -D {branch}");
                         if (localResult.Contains("Deleted branch"))
                         {
                             AnsiConsole.MarkupLine($"  [green]✓[/] Deleted local branch [grey]{branch}[/]");
@@ -173,7 +180,7 @@ namespace GitBuddy.Commands.Git
                         }
 
                         // Delete remote branch
-                        var remoteResult = GitService.Run($"push origin --delete {branch}");
+                        var remoteResult = _gitService.Run($"push origin --delete {branch}");
                         if (remoteResult.Contains("deleted") || remoteResult.Contains("remote ref does not exist"))
                         {
                             AnsiConsole.MarkupLine($"  [green]✓[/] Deleted remote branch [grey]origin/{branch}[/]");

@@ -1,38 +1,19 @@
-using System.Diagnostics;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Services
 {
-    public static class GitService
+    public class GitService : IGitService
     {
-        public static string Run(string args, string fileName = "git")
+        private readonly IProcessRunner _processRunner;
+
+        public GitService(IProcessRunner processRunner)
         {
-            var processInfo = new ProcessStartInfo
-            {
-                FileName = fileName, 
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
+            _processRunner = processRunner;
+        }
 
-            using var process = Process.Start(processInfo);
-            
-            if (process == null) 
-            {
-                return "Error: Could not start process";
-            }
-
-            string output = process.StandardOutput.ReadToEnd();
-            string error = process.StandardError.ReadToEnd();
-            process.WaitForExit();
-
-            if (string.IsNullOrWhiteSpace(output))
-            {
-                return error.Trim();
-            }
-
-            return output.Trim();
+        public string Run(string args, string fileName = "git")
+        {
+            return _processRunner.Run(fileName, args);
         }
     }
 }

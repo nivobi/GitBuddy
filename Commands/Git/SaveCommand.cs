@@ -4,13 +4,24 @@ using System.Threading;
 using System.Threading.Tasks;
 using Spectre.Console;
 using Spectre.Console.Cli;
-using GitBuddy.Services;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Git
 {
     public class SaveCommand : AsyncCommand<SaveCommand.Settings>
     {
-        public class Settings : CommandSettings 
+        private readonly IGitService _gitService;
+        private readonly IConfigManager _configManager;
+        private readonly IAiService _aiService;
+
+        public SaveCommand(IGitService gitService, IConfigManager configManager, IAiService aiService)
+        {
+            _gitService = gitService;
+            _configManager = configManager;
+            _aiService = aiService;
+        }
+
+        public class Settings : CommandSettings
         {
             [CommandOption("-a|--ai")]
             [Description("Use AI to suggest a commit message.")]
@@ -29,7 +40,7 @@ namespace GitBuddy.Commands.Git
 
             // 1. Stage changes
             AnsiConsole.Status().Start("Staging files...", ctx => { 
-                GitService.Run("add ."); 
+                _gitService.Run("add ."); 
             });
 
             string? commitMessage = null;
@@ -37,7 +48,7 @@ namespace GitBuddy.Commands.Git
             // 2. AI Logic
             if (settings.UseAi)
             {
-                var (provider, model, apiKey) = ConfigManager.LoadConfig();
+                var (provider, model, apiKey) = _configManager.LoadConfig();
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
@@ -45,7 +56,7 @@ namespace GitBuddy.Commands.Git
                 }
                 else
                 {
-                    string diff = GitService.Run("diff --cached");
+                    string diff = _gitService.Run("diff --cached");
                     
                     if (string.IsNullOrWhiteSpace(diff))
                     {
@@ -54,7 +65,7 @@ namespace GitBuddy.Commands.Git
                     else
                     {
                         await AnsiConsole.Status().StartAsync("[blue]AI is thinking...[/]", async ctx => {
-                            commitMessage = await AiService.GenerateCommitMessage(diff);
+                            commitMessage = await _aiService.GenerateCommitMessage(diff);
                         });
                         
                         if (string.IsNullOrEmpty(commitMessage))
@@ -94,7 +105,7 @@ namespace GitBuddy.Commands.Git
 
             // 4. Final Save
             AnsiConsole.MarkupLine("[grey]Saving...[/]");
-            string result = GitService.Run($"commit -m \"{commitMessage}\"");
+            string result = _gitService.Run($"commit -m \"{commitMessage}\"");
             
             AnsiConsole.Write(new Panel(new Text(result))
                 .Header("✔ Work Saved")
@@ -103,9 +114,9 @@ namespace GitBuddy.Commands.Git
             return 0;
         }
 
-        private static bool IsGitRepository()
+        private bool IsGitRepository()
         {
-            var result = GitService.Run("rev-parse --is-inside-work-tree");
+            var result = _gitService.Run("rev-parse --is-inside-work-tree");
             return result.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
     }
