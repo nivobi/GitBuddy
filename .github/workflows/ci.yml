@@ -32,23 +32,14 @@ jobs:
       run: dotnet build --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+      run: dotnet test --configuration Release --no-build --verbosity normal
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
       if: always()  # Upload even if tests fail
       with:
         name: test-results-${{ matrix.os }}
-        path: '**/test-results.trx'
-
-    - name: Test Summary
-      uses: test-reporter/action@v1
-      if: always()
-      with:
-        name: Tests (${{ matrix.os }})
-        path: '**/test-results.trx'
-        reporter: dotnet-trx
-        fail-on-error: 'false'
+        path: '**/TestResults/**/*.trx'
 
   code-quality:
     name: Code Quality
