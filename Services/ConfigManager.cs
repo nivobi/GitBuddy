@@ -20,6 +20,7 @@ namespace GitBuddy.Services
     {
         private readonly IFileSystem _fileSystem;
         private readonly IAnsiConsole _console;
+        private (string Provider, string Model, string ApiKey)? _cachedConfig;
 
         private string ConfigPath => _fileSystem.Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -47,11 +48,25 @@ namespace GitBuddy.Services
 
             string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
             _fileSystem.File.WriteAllText(ConfigPath, json);
+
+            // Invalidate cache after saving new config
+            _cachedConfig = null;
         }
 
         public (string Provider, string Model, string ApiKey) LoadConfig()
         {
-            if (!_fileSystem.File.Exists(ConfigPath)) return ("openai", "gpt-4o-mini", "");
+            // Return cached config if available
+            if (_cachedConfig.HasValue)
+            {
+                return _cachedConfig.Value;
+            }
+
+            if (!_fileSystem.File.Exists(ConfigPath))
+            {
+                var defaultConfig = ("openai", "gpt-4o-mini", "");
+                _cachedConfig = defaultConfig;
+                return defaultConfig;
+            }
 
             try
             {
@@ -62,7 +77,9 @@ namespace GitBuddy.Services
                 string model = config?.AiModel ?? "gpt-4o-mini";
                 string decryptedKey = Decrypt(config?.EncryptedApiKey ?? "");
 
-                return (provider, model, decryptedKey);
+                var loadedConfig = (provider, model, decryptedKey);
+                _cachedConfig = loadedConfig;
+                return loadedConfig;
             }
             catch (JsonException ex)
             {
@@ -70,7 +87,9 @@ namespace GitBuddy.Services
                 _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
                 _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
                 _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
-                return ("openai", "gpt-4o-mini", "");
+                var defaultConfig = ("openai", "gpt-4o-mini", "");
+                _cachedConfig = defaultConfig;
+                return defaultConfig;
             }
             catch (IOException ex)
             {
@@ -78,21 +97,27 @@ namespace GitBuddy.Services
                 _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
                 _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
                 _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
-                return ("openai", "gpt-4o-mini", "");
+                var defaultConfig = ("openai", "gpt-4o-mini", "");
+                _cachedConfig = defaultConfig;
+                return defaultConfig;
             }
             catch (UnauthorizedAccessException)
             {
                 _console.MarkupLine("[yellow]⚠ Warning:[/] Permission denied reading config file.");
                 _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
                 _console.MarkupLine("[grey]Check file permissions. Using default config.[/]");
-                return ("openai", "gpt-4o-mini", "");
+                var defaultConfig = ("openai", "gpt-4o-mini", "");
+                _cachedConfig = defaultConfig;
+                return defaultConfig;
             }
             catch (Exception ex)
             {
                 _console.MarkupLine("[yellow]⚠ Warning:[/] Unexpected error loading config.");
                 _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
                 _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");
-                return ("openai", "gpt-4o-mini", "");
+                var defaultConfig = ("openai", "gpt-4o-mini", "");
+                _cachedConfig = defaultConfig;
+                return defaultConfig;
             }
         }
 

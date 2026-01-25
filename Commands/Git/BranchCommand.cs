@@ -101,18 +101,16 @@ namespace GitBuddy.Commands.Git
         private async Task<int> SwitchBranch(CancellationToken cancellationToken)
         {
             // Get all branches
-            var branchOutput = await _gitService.RunAsync("branch -a", cancellationToken);
-            if (string.IsNullOrWhiteSpace(branchOutput.Output))
+            var allBranches = await _gitService.GetAllBranchesAsync(cancellationToken);
+            if (!allBranches.Any())
             {
                 AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
                 return 0;
             }
 
             // Parse branches
-            var branches = branchOutput.Output
-                .Split('\n')
-                .Select(b => b.Trim().TrimStart('*').Trim())
-                .Where(b => !string.IsNullOrWhiteSpace(b) && !b.Contains("HEAD ->"))
+            var branches = allBranches
+                .Where(b => !b.Contains("HEAD ->"))
                 .Select(b => b.Replace("remotes/origin/", ""))
                 .Distinct()
                 .OrderBy(b => b)
@@ -132,8 +130,7 @@ namespace GitBuddy.Commands.Git
                     .AddChoices(branches));
 
             // Check for uncommitted changes first
-            var statusCheck = await _gitService.RunAsync("status --porcelain", cancellationToken);
-            if (!string.IsNullOrWhiteSpace(statusCheck.Output))
+            if (await _gitService.HasUncommittedChangesAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[yellow]⚠[/] You have uncommitted changes.");
                 AnsiConsole.MarkupLine("[grey]Please commit or stash your changes before switching branches.[/]");

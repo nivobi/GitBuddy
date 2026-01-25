@@ -41,7 +41,7 @@ namespace GitBuddy.Services
 
             string projectContext = "a software project";
             if (_fileSystem.File.Exists(".buddycontext"))
-                projectContext = _fileSystem.File.ReadAllText(".buddycontext").Trim();
+                projectContext = (await _fileSystem.File.ReadAllTextAsync(".buddycontext")).Trim();
 
             string apiUrl = GetApiUrl(provider);
 

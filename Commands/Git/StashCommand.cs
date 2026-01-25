@@ -60,8 +60,7 @@ namespace GitBuddy.Commands.Git
         private async Task<int> PushStash(Settings settings, CancellationToken cancellationToken)
         {
             // Check if there are changes to stash
-            var statusResult = await _gitService.RunAsync("status --porcelain", cancellationToken);
-            if (string.IsNullOrWhiteSpace(statusResult.Output))
+            if (!await _gitService.HasUncommittedChangesAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[yellow]⚠[/] No changes to stash.");
                 return 0;
@@ -218,8 +217,7 @@ namespace GitBuddy.Commands.Git
             }
 
             // Check for uncommitted changes
-            var statusResult = await _gitService.RunAsync("status --porcelain", cancellationToken);
-            if (!string.IsNullOrWhiteSpace(statusResult.Output))
+            if (await _gitService.HasUncommittedChangesAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
                 if (!AnsiConsole.Confirm("Apply stash anyway? (may cause conflicts)", false))
@@ -294,8 +292,7 @@ namespace GitBuddy.Commands.Git
             }
 
             // Check for uncommitted changes (warning only)
-            var statusResult = await _gitService.RunAsync("status --porcelain", cancellationToken);
-            if (!string.IsNullOrWhiteSpace(statusResult.Output))
+            if (await _gitService.HasUncommittedChangesAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
                 if (!AnsiConsole.Confirm("Apply stash anyway? (may cause conflicts)", false))

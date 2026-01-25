@@ -38,8 +38,7 @@ namespace GitBuddy.Commands.Git
             string errorDetails = "";
 
             // Get current branch name
-            var branchResult = await _gitService.RunAsync("branch --show-current", cancellationToken);
-            string currentBranch = branchResult.Output;
+            string? currentBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
             if (string.IsNullOrWhiteSpace(currentBranch))
             {
                 AnsiConsole.MarkupLine("[red]✗[/] Could not determine current branch.");
@@ -47,8 +46,7 @@ namespace GitBuddy.Commands.Git
             }
 
             // Get remote URL for display
-            var urlResult = await _gitService.RunAsync("remote get-url origin", cancellationToken);
-            string remoteUrl = urlResult.Output;
+            string? remoteUrl = await _gitService.GetRemoteUrlAsync("origin", cancellationToken) ?? "";
             string repoDisplay = remoteUrl.Replace("https://github.com/", "").Replace(".git", "").Trim();
             if (repoDisplay.Contains("git@github.com:"))
             {

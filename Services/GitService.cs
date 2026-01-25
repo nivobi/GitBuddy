@@ -26,5 +26,38 @@ namespace GitBuddy.Services
             var result = await RunAsync("rev-parse --is-inside-work-tree", cancellationToken);
             return result.Output.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
+
+        public async Task<string?> GetCurrentBranchAsync(CancellationToken cancellationToken = default)
+        {
+            var result = await RunAsync("branch --show-current", cancellationToken);
+            return string.IsNullOrWhiteSpace(result.Output) ? null : result.Output;
+        }
+
+        public async Task<bool> HasUncommittedChangesAsync(CancellationToken cancellationToken = default)
+        {
+            var result = await RunAsync("status --porcelain", cancellationToken);
+            return !string.IsNullOrWhiteSpace(result.Output);
+        }
+
+        public async Task<string?> GetRemoteUrlAsync(string remoteName = "origin", CancellationToken cancellationToken = default)
+        {
+            var result = await RunAsync($"remote get-url {remoteName}", cancellationToken);
+            return string.IsNullOrWhiteSpace(result.Output) ? null : result.Output;
+        }
+
+        public async Task<List<string>> GetAllBranchesAsync(CancellationToken cancellationToken = default)
+        {
+            var result = await RunAsync("branch -a", cancellationToken);
+            if (string.IsNullOrWhiteSpace(result.Output))
+            {
+                return new List<string>();
+            }
+
+            return result.Output
+                .Split('\n')
+                .Select(b => b.Trim().TrimStart('*').Trim())
+                .Where(b => !string.IsNullOrWhiteSpace(b))
+                .ToList();
+        }
     }
 }

@@ -46,8 +46,7 @@ namespace GitBuddy.Commands.Git
             }
 
             // Get current branch
-            var currentBranchResult = await _gitService.RunAsync("branch --show-current", cancellationToken);
-            var currentBranch = currentBranchResult.Output.Trim();
+            var currentBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
             if (string.IsNullOrWhiteSpace(currentBranch))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Could not determine current branch.");
@@ -119,8 +118,7 @@ namespace GitBuddy.Commands.Git
             AnsiConsole.WriteLine();
 
             // Check for uncommitted changes
-            var statusCheck = await _gitService.RunAsync("status --porcelain", cancellationToken);
-            if (!string.IsNullOrWhiteSpace(statusCheck.Output))
+            if (await _gitService.HasUncommittedChangesAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[yellow]⚠ Warning:[/] You have uncommitted changes.");
                 if (!AnsiConsole.Confirm("Continue with merge anyway?", false))
@@ -161,17 +159,15 @@ namespace GitBuddy.Commands.Git
 
         private async Task<string?> SelectBranch(string currentBranch, string? title = null, CancellationToken cancellationToken = default)
         {
-            var branchOutput = await _gitService.RunAsync("branch -a", cancellationToken);
-            if (string.IsNullOrWhiteSpace(branchOutput.Output))
+            var allBranches = await _gitService.GetAllBranchesAsync(cancellationToken);
+            if (!allBranches.Any())
             {
                 AnsiConsole.MarkupLine("[yellow]No branches found.[/]");
                 return null;
             }
 
-            var branches = branchOutput.Output
-                .Split('\n')
-                .Select(b => b.Trim().TrimStart('*').Trim())
-                .Where(b => !string.IsNullOrWhiteSpace(b) && !b.Contains("HEAD ->"))
+            var branches = allBranches
+                .Where(b => !b.Contains("HEAD ->"))
                 .Select(b => b.Replace("remotes/origin/", ""))
                 .Distinct()
                 .Where(b => b != currentBranch)  // Filter current branch AFTER cleaning names
