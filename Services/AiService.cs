@@ -163,8 +163,29 @@ namespace GitBuddy.Services
             }
             catch (HttpRequestException ex)
             {
-                _console.MarkupLine($"[red]✗ Network Error:[/] Unable to connect to {provider}. Check your internet connection.");
-                _console.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
+                _console.MarkupLine($"[red]✗ Network Error:[/] Unable to connect to {provider}.");
+
+                // Provide more specific error messages
+                if (ex.Message.Contains("Name or service not known") || ex.Message.Contains("nodename nor servname"))
+                {
+                    _console.MarkupLine("[grey]DNS lookup failed. Check your internet connection or DNS settings.[/]");
+                }
+                else if (ex.Message.Contains("copying content to a stream"))
+                {
+                    _console.MarkupLine("[grey]Connection interrupted. This may be due to:[/]");
+                    _console.MarkupLine("[grey]  • Firewall or proxy blocking the connection[/]");
+                    _console.MarkupLine("[grey]  • Network instability[/]");
+                    _console.MarkupLine("[grey]  • Try again or switch to a different AI provider[/]");
+                }
+                else if (ex.Message.Contains("SSL") || ex.Message.Contains("certificate"))
+                {
+                    _console.MarkupLine("[grey]SSL/TLS error. Your system certificates may need updating.[/]");
+                }
+                else
+                {
+                    _console.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
+                }
+
                 return null;
             }
             catch (JsonException ex)

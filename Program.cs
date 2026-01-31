@@ -23,7 +23,20 @@ namespace GitBuddy
             // Register infrastructure services
             services.AddSingleton<IFileSystem, FileSystem>();
             services.AddSingleton<IProcessRunner, ProcessRunner>();
-            services.AddHttpClient<IAiService, AiService>();
+            services.AddHttpClient<IAiService, AiService>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+                client.DefaultRequestHeaders.Add("User-Agent", "GitBuddy/1.2");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                // Allow automatic decompression
+                AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate,
+                // Use system proxy settings
+                UseProxy = true,
+                // Don't use default credentials for proxy (can cause issues)
+                UseDefaultCredentials = false
+            });
             services.AddSingleton<IAnsiConsole>(AnsiConsole.Console);
 
             // Register application services

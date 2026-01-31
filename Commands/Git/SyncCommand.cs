@@ -33,7 +33,25 @@ namespace GitBuddy.Commands.Git
                 return await HandleNewRepoFlow(cancellationToken);
             }
 
-            // 2. Standard Sync Flow with Error Handling
+            // 2. Check for uncommitted changes or no commits
+            var hasUncommittedChanges = await _gitService.HasUncommittedChangesAsync(cancellationToken);
+            if (hasUncommittedChanges)
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠[/] You have uncommitted changes.");
+                AnsiConsole.MarkupLine("[grey]Run[/] [blue]buddy save[/] [grey]first to commit your changes.[/]");
+                return 1;
+            }
+
+            // Check if there are any commits at all
+            var commitCheckResult = await _gitService.RunAsync("rev-list --count HEAD", cancellationToken);
+            if (commitCheckResult.Output.Contains("fatal") || commitCheckResult.Output.Trim() == "0")
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠[/] No commits found in this repository.");
+                AnsiConsole.MarkupLine("[grey]Run[/] [blue]buddy save[/] [grey]to create your first commit.[/]");
+                return 1;
+            }
+
+            // 3. Standard Sync Flow with Error Handling
             bool syncFailed = false;
             string errorDetails = "";
 
@@ -95,8 +113,9 @@ namespace GitBuddy.Commands.Git
                     ctx.Status($"Pushing changes to origin/{currentBranch}...");
                 }
 
-                var pushResult = await _gitService.RunAsync($"push -u origin {currentBranch}", cancellationToken);
-                string pushOutput = pushResult.Output;
+                // Use 5 minute timeout for push (large repos with photos/videos need time)
+                var pushResult = await _gitService.RunAsync($"push -u origin {currentBranch}", 300000, cancellationToken);
+                string pushOutput = pushResult.Output + pushResult.Error;
 
                 if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
                 {
@@ -109,9 +128,16 @@ namespace GitBuddy.Commands.Git
             {
                 AnsiConsole.Write(new Panel(errorDetails).Header("Sync Failed").BorderColor(Color.Red));
 
-                if (errorDetails.Contains("not found"))
+                // Check if it's a missing/deleted repository
+                bool isRepoMissing = errorDetails.Contains("not found") ||
+                                     errorDetails.Contains("HTTP 400") ||
+                                     errorDetails.Contains("Repository not found") ||
+                                     errorDetails.Contains("does not appear to be a git repository");
+
+                if (isRepoMissing)
                 {
-                    if (AnsiConsole.Confirm("[yellow]The remote repository seems to be missing. Remove the dead link and re-create it?[/]"))
+                    AnsiConsole.WriteLine();
+                    if (AnsiConsole.Confirm("[yellow]The remote repository seems to be missing or deleted. Remove the dead link and create a new one?[/]"))
                     {
                         await _gitService.RunAsync("remote remove origin", cancellationToken);
                         return await HandleNewRepoFlow(cancellationToken);
@@ -204,7 +230,16 @@ namespace GitBuddy.Commands.Git
         private async Task<int> HandleNewRepoFlow(CancellationToken cancellationToken)
         {
             AnsiConsole.MarkupLine("[yellow]! No valid GitHub repository linked.[/]");
-            
+
+            // Check if there are any commits before creating a repo
+            var commitCheckResult = await _gitService.RunAsync("rev-list --count HEAD", cancellationToken);
+            if (commitCheckResult.Output.Contains("fatal") || commitCheckResult.Output.Trim() == "0")
+            {
+                AnsiConsole.MarkupLine("[yellow]⚠[/] No commits found in this repository.");
+                AnsiConsole.MarkupLine("[grey]Run[/] [blue]buddy save[/] [grey]to create your first commit before setting up GitHub sync.[/]");
+                return 1;
+            }
+
             if (!AnsiConsole.Confirm("Would you like me to create a GitHub repository for you?"))
             {
                 return 0;
@@ -221,17 +256,20 @@ namespace GitBuddy.Commands.Git
             string description = AnsiConsole.Ask<string>("[grey]Description (optional):[/]", "");
 
             string repoUrl = "";
+            bool creationFailed = false;
+            string creationError = "";
 
-            await AnsiConsole.Status().StartAsync("Creating repository on GitHub...", async ctx => 
+            await AnsiConsole.Status().StartAsync("Creating repository on GitHub...", async ctx =>
             {
                 await Task.Run(() => {
                     string visibilityFlag = visibility == "Private" ? "--private" : "--public";
                     string descriptionFlag = !string.IsNullOrEmpty(description) ? $"--description \"{description}\"" : "";
-                    
+
+                    // Create repo WITHOUT --push flag (we'll push separately to check for errors)
                     var startInfo = new ProcessStartInfo
                     {
                         FileName = "gh",
-                        Arguments = $"repo create {repoName} {visibilityFlag} {descriptionFlag} --source=. --remote=origin --push",
+                        Arguments = $"repo create {repoName} {visibilityFlag} {descriptionFlag} --source=. --remote=origin",
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         UseShellExecute = false,
@@ -239,11 +277,74 @@ namespace GitBuddy.Commands.Git
                     };
 
                     using var process = Process.Start(startInfo);
-                    process?.WaitForExit();
-                    
+                    if (process != null)
+                    {
+                        process.WaitForExit();
+                        string stderr = process.StandardError.ReadToEnd();
+
+                        if (process.ExitCode != 0)
+                        {
+                            creationFailed = true;
+                            creationError = stderr;
+                        }
+                    }
+
                     repoUrl = GetRepoUrl();
                 });
             });
+
+            if (creationFailed)
+            {
+                AnsiConsole.MarkupLine($"[red]✗ Failed to create repository:[/]");
+                AnsiConsole.MarkupLine($"[grey]{creationError}[/]");
+                return 1;
+            }
+
+            // gh creates remote with HTTPS URL, but HTTPS has issues with some GitHub accounts
+            // Switch to SSH URL for better compatibility
+            string? remoteUrl = await _gitService.GetRemoteUrlAsync("origin", cancellationToken);
+            if (!string.IsNullOrEmpty(remoteUrl) && remoteUrl.StartsWith("https://github.com/"))
+            {
+                string sshUrl = remoteUrl
+                    .Replace("https://github.com/", "git@github.com:")
+                    .Replace(".git", "") + ".git";
+
+                await _gitService.RunAsync($"remote set-url origin {sshUrl}", cancellationToken);
+            }
+
+            // Rename branch to main if it's master (GitHub default is now main)
+            string? currentBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
+            if (currentBranch == "master")
+            {
+                await _gitService.RunAsync("branch -M main", cancellationToken);
+                currentBranch = "main";
+            }
+
+            // Now push the commits separately so we can check for errors
+            if (!string.IsNullOrWhiteSpace(currentBranch))
+            {
+                await AnsiConsole.Status().StartAsync($"Pushing commits to {repoName}...", async ctx =>
+                {
+                    // Use 5 minute timeout for push (large repos with photos/videos need time)
+                    var pushResult = await _gitService.RunAsync($"push -u origin {currentBranch}", 300000, cancellationToken);
+                    string pushOutput = pushResult.Output + pushResult.Error;
+
+                    if (pushOutput.Contains("error") || pushOutput.Contains("fatal"))
+                    {
+                        creationFailed = true;
+                        creationError = $"Repository created but push failed:\n{pushOutput}";
+                    }
+                });
+
+                if (creationFailed)
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.Write(new Panel(creationError).Header("Push Failed").BorderColor(Color.Yellow));
+                    AnsiConsole.MarkupLine("[yellow]The repository was created but your files weren't pushed.[/]");
+                    AnsiConsole.MarkupLine($"[grey]Try running[/] [blue]buddy sync[/] [grey]again to push your changes.[/]");
+                    return 1;
+                }
+            }
 
             if (!string.IsNullOrEmpty(repoUrl))
             {

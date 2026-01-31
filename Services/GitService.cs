@@ -21,6 +21,11 @@ namespace GitBuddy.Services
             return _processRunner.RunAsync(fileName, args, cancellationToken);
         }
 
+        public Task<ProcessResult> RunAsync(string args, int timeoutMs, CancellationToken cancellationToken = default)
+        {
+            return _processRunner.RunAsync("git", args, timeoutMs, cancellationToken);
+        }
+
         public async Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken = default)
         {
             var result = await RunAsync("rev-parse --is-inside-work-tree", cancellationToken);

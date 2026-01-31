@@ -5,6 +5,7 @@ namespace GitBuddy.Infrastructure
         // Low-level git command execution
         Task<ProcessResult> RunAsync(string args, CancellationToken cancellationToken = default);
         Task<ProcessResult> RunAsync(string args, string fileName, CancellationToken cancellationToken = default);
+        Task<ProcessResult> RunAsync(string args, int timeoutMs, CancellationToken cancellationToken = default);
 
         // Common git operations
         Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken = default);
