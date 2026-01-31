@@ -46,6 +46,35 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
   - Preview commits before merging
   - Fast-forward detection
 
+### Stash Management
+- **Smart Stash Operations:** `buddy stash` provides intuitive stash management:
+  - `buddy stash push [message]` - Stash current changes with optional message
+  - `buddy stash pop [index]` - Apply and remove stash interactively
+  - `buddy stash apply [index]` - Apply stash without removing it
+  - `buddy stash list` - Display all stashes in a formatted table
+  - `buddy stash push -u` - Include untracked files when stashing
+
+### Undo Operations
+- **Safe Undo:** `buddy undo` helps you recover from mistakes:
+  - Undo last commit (soft reset - keeps your changes)
+  - Discard all changes (hard reset - destructive)
+  - Interactive confirmation to prevent accidents
+
+### Repository Status
+- **Quick Status:** `buddy status` shows a clean, formatted view of your current changes
+
+### Configuration
+- **AI Provider Setup:** `buddy config` configures your AI integration:
+  - Choose from OpenAI, OpenRouter, or DeepSeek
+  - Select models (GPT-4o, Claude, Gemini, DeepSeek, etc.)
+  - Securely store and encrypt your API keys
+
+### CI/CD Generation
+- **Workflow Generator:** `buddy cicd` automatically generates GitHub Actions workflows:
+  - Auto-detects .NET and Node.js projects
+  - Creates `.github/workflows/ci.yml` tailored to your project
+  - Ready to commit and push to GitHub
+
 ### Other Tools
 - **Clean Setup:** `buddy setup` gets a new folder ready with a solid `.gitignore` so I don't accidentally upload junk or build files.
 
@@ -57,7 +86,11 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
 
 ## 📖 Quick Start Examples
 
+### Daily Workflow
 ```bash
+# Check current status
+buddy status
+
 # Create a new feature branch
 buddy branch create dark-mode
 # Creates: feature/dark-mode
@@ -66,6 +99,12 @@ buddy branch create dark-mode
 buddy save --ai
 # AI analyzes your changes and suggests a commit message
 
+# Need to switch to another branch? Stash your work first
+buddy stash push "WIP: dark mode styling"
+
+# Later, come back and restore your work
+buddy stash pop
+
 # Merge your feature into master
 buddy merge --into master --ai
 # Merges current branch into master with AI-generated merge message
@@ -73,10 +112,25 @@ buddy merge --into master --ai
 # Push and cleanup
 buddy sync
 # Pushes changes and offers to delete merged branches
+```
 
+### Other Common Tasks
+```bash
 # Switch between branches
 buddy branch switch
 # Interactive selection of available branches
+
+# Oops, made a mistake? Undo the last commit
+buddy undo
+# Options: undo last commit (keep changes) or discard all changes
+
+# Clean up merged branches
+buddy branch clean
+# Removes all local branches that have been merged
+
+# Generate CI/CD workflow
+buddy cicd
+# Creates GitHub Actions workflow for your project
 ```
 
 ## 🛠 Installation
@@ -98,6 +152,53 @@ git clone [https://github.com/nivobi/GitBuddy.git](https://github.com/nivobi/Git
 cd GitBuddy
 dotnet build -c Release
 ```
+
+---
+
+## 🤖 AI Setup (Optional)
+
+To use AI-powered features like `buddy save --ai` and `buddy merge --ai`:
+
+### 1. Configure your AI provider
+```bash
+buddy config
+```
+
+### 2. Choose a provider and model
+GitBuddy supports three AI providers:
+
+| Provider | Models Available | Setup |
+|----------|-----------------|-------|
+| **OpenAI** | GPT-4o, GPT-4o-mini, etc. | Get API key from [platform.openai.com](https://platform.openai.com/api-keys) |
+| **OpenRouter** | DeepSeek, Claude, Gemini, and more | Get API key from [openrouter.ai](https://openrouter.ai/keys) |
+| **DeepSeek** | DeepSeek Chat | Get API key from [platform.deepseek.com](https://platform.deepseek.com) |
+
+The configuration is stored securely with encrypted API keys.
+
+### 3. Set up project context (Recommended)
+```bash
+buddy describe
+```
+This creates a `.buddycontext` file that helps the AI understand your project for better commit messages.
+
+---
+
+## 🚀 CI/CD Setup
+
+GitBuddy can auto-generate GitHub Actions workflows:
+
+```bash
+buddy cicd
+```
+
+This will:
+- Detect your project type (.NET or Node.js)
+- Create a `.github/workflows/ci.yml` file
+- Set up automated builds and tests on push/PR
+
+For detailed setup instructions, see [CICD_SETUP.md](.github/CICD_SETUP.md).
+
+---
 
 ## 🌱 Roadmap & Learning
 This is my first open-source project, and I'm using it to explore:
