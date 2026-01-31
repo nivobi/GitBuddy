@@ -86,13 +86,21 @@ namespace GitBuddy.Commands.Git
                 result = await _gitService.RunAsync($"checkout -b {fullBranchName}", cancellationToken);
             });
 
-            if (result.Output.Contains("Switched to a new branch") || result.Output.Contains("switched to a new branch"))
+            if (result.ExitCode == 0)
             {
                 AnsiConsole.MarkupLine($"[green]✓[/] Created and switched to branch [blue]{fullBranchName}[/]");
             }
             else
             {
-                AnsiConsole.MarkupLine($"[red]✗[/] Failed to create branch: {result.Output}");
+                var errorMsg = string.IsNullOrWhiteSpace(result.Error) ? result.Output : result.Error;
+                if (string.IsNullOrWhiteSpace(errorMsg))
+                {
+                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to create branch (exit code {result.ExitCode})");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to create branch: {errorMsg}");
+                }
             }
 
             return 0;
