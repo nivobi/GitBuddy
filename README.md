@@ -71,9 +71,32 @@ The goal of GitBuddy isn't to replace Git, but to make it feel more intuitive. I
 
 ### CI/CD Generation
 - **Workflow Generator:** `buddy cicd` automatically generates GitHub Actions workflows:
-  - Auto-detects .NET and Node.js projects
+  - Auto-detects project type (.NET, Node.js, Python, Go, Docker, or Generic)
   - Creates `.github/workflows/ci.yml` tailored to your project
-  - Ready to commit and push to GitHub
+  - Options: `--type`, `--output`, `--force`, `--dry-run`
+  
+- **Interactive Setup:** `buddy cicd-init` guided wizard:
+  - Step-by-step project configuration
+  - Select features (build, test, lint, security scan, deploy)
+  - Choose target branches
+  
+- **Template Export:** `buddy cicd-export` for customization:
+  - Export single template: `buddy cicd-export python -o my-template.yml`
+  - Export all templates: `buddy cicd-export --all -o ./templates/`
+  - Modify and use your own customized workflows
+
+### Release Management
+- **Semantic Versioning:** `buddy release` simplifies creating version tags:
+  - `buddy release` - Show current version, commits since last release, and suggested next versions
+  - `buddy release patch` - Create patch release (e.g., 1.2.3 → 1.2.4)
+  - `buddy release minor` - Create minor release (e.g., 1.2.3 → 1.3.0)
+  - `buddy release major` - Create major release (e.g., 1.2.3 → 2.0.0)
+  - `buddy release patch --push` - Create and push tag to trigger CI/CD
+  - `buddy release minor --message "Breaking: New API" --push` - Custom message with auto-push
+  - `buddy release minor --dry-run` - Preview changes without creating tags
+  - Works with any project using semantic versioning
+  - Confirmation prompt before creating tags
+  - Shows commits since last release to help decide version bump type
 
 ### Other Tools
 - **Clean Setup:** `buddy setup` gets a new folder ready with a solid `.gitignore` so I don't accidentally upload junk or build files.
@@ -128,9 +151,27 @@ buddy undo
 buddy branch clean
 # Removes all local branches that have been merged
 
-# Generate CI/CD workflow
+# Generate CI/CD workflow (auto-detects project type)
 buddy cicd
 # Creates GitHub Actions workflow for your project
+
+# Use interactive wizard for guided setup
+buddy cicd-init
+
+# Export templates to customize them
+buddy cicd-export python -o my-python-ci.yml
+
+# Create a new release
+buddy release
+# Shows current version, commits since last release, and suggested next versions
+
+# Create a patch release and push it
+buddy release patch --push
+# Creates v1.2.3 → v1.2.4 tag and pushes to trigger CI/CD
+
+# Preview a minor release without creating it
+buddy release minor --dry-run
+# Shows what would be created without making changes
 ```
 
 ## 🛠 Installation
@@ -185,18 +226,69 @@ This creates a `.buddycontext` file that helps the AI understand your project fo
 
 ## 🚀 CI/CD Setup
 
-GitBuddy can auto-generate GitHub Actions workflows:
+GitBuddy can auto-generate GitHub Actions workflows for multiple project types:
 
+### Supported Project Types
+- **.NET** (`.csproj`, `.sln` files) - Build, restore, test on Ubuntu
+- **Node.js** (`package.json`) - Test on Node 18.x, 20.x, 22.x with npm
+- **Python** (`requirements.txt`, `pyproject.toml`, `poetry.lock`) - Supports pip and Poetry
+- **Go** (`go.mod`) - Build, test, and lint with golangci-lint
+- **Docker** (`Dockerfile`) - Multi-stage builds, security scanning with Trivy
+- **Generic** - Template for custom projects
+
+### Quick Setup
+
+**Auto-detect and generate:**
 ```bash
 buddy cicd
 ```
 
-This will:
-- Detect your project type (.NET or Node.js)
-- Create a `.github/workflows/ci.yml` file
-- Set up automated builds and tests on push/PR
+**Specify project type manually:**
+```bash
+buddy cicd --type python
+buddy cicd --type go --output .github/workflows/go-ci.yml
+```
 
-For detailed setup instructions, see [CICD_SETUP.md](.github/CICD_SETUP.md).
+**Preview without creating files:**
+```bash
+buddy cicd --type docker --dry-run
+```
+
+**Force overwrite existing workflow:**
+```bash
+buddy cicd --force
+```
+
+### Interactive Setup Wizard
+
+For a guided experience with customization options:
+```bash
+buddy cicd-init
+```
+
+This interactive wizard will:
+1. Let you select your project type
+2. Choose workflow features (build, test, lint, security scan, deploy)
+3. Configure target branches
+4. Generate a customized workflow
+
+### Export Templates for Customization
+
+Want to customize the templates? Export them first:
+
+**Export a single template:**
+```bash
+buddy cicd-export python -o my-custom-python.yml
+```
+
+**Export all templates:**
+```bash
+buddy cicd-export --all -o ./my-templates/
+```
+
+After customizing, you can use your templates directly or reference them when creating workflows.
+
+For detailed publishing instructions, see [CICD_SETUP.md](.github/CICD_SETUP.md).
 
 ---
 

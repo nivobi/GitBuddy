@@ -1,4 +1,4 @@
-﻿using System.IO.Abstractions;
+using System.IO.Abstractions;
 using System.Net.Http;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +42,7 @@ namespace GitBuddy
             // Register application services
             services.AddSingleton<IConfigManager, ConfigManager>();
             services.AddSingleton<IGitService, GitService>();
+            services.AddSingleton<IEmbeddedResourceLoader, EmbeddedResourceLoader>();
             // IAiService is registered via AddHttpClient above
 
             // Create registrar and app
@@ -92,7 +93,16 @@ namespace GitBuddy
                     .WithDescription("Updates GitBuddy to the latest version from NuGet");
 
                 config.AddCommand<CiCdCommand>("cicd")
-                    .WithDescription("Generate a CI/CD pipeline for your project.");
+                    .WithDescription("Generate a CI/CD workflow for your project.");
+                
+                config.AddCommand<CiCdInitCommand>("cicd-init")
+                    .WithDescription("Interactive CI/CD setup wizard.");
+                
+                config.AddCommand<CiCdExportCommand>("cicd-export")
+                    .WithDescription("Export CI/CD templates for customization.");
+
+                config.AddCommand<ReleaseCommand>("release")
+                    .WithDescription("Create a new release (manage version tags).");
 
                 // --- NEW WELCOME LOGIC START ---
                 string welcomeFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitbuddy_welcome");

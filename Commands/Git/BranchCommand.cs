@@ -455,15 +455,4 @@ namespace GitBuddy.Commands.Git
                 "  buddy branch create dark-mode\n" +
                 "  buddy branch switch\n" +
                 "  buddy branch delete old-feature\n" +
-                "  buddy branch rename new-name\n" +
-                "  buddy branch clean"
-            );
-            panel.Header = new PanelHeader("Branch Command Help");
-            panel.BorderColor(Color.Blue);
-
-            AnsiConsole.Write(panel);
-
-            return Task.FromResult(0);
-        }
-    }
-}
+                "  buddy branch 

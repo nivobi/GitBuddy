@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -34,6 +34,11 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.2" />
     <None Include="icon.png" Pack="true" PackagePath="\" />
     <None Include="README.md" Pack="true" PackagePath="\" />
+    
+    <!-- Embedded CI/CD Templates -->
+    <EmbeddedResource Include="Templates\GitHubActions\*.yml">
+      <LogicalName>GitBuddy.Templates.GitHubActions.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

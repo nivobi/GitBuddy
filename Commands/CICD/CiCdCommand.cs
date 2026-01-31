@@ -1,182 +1,130 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
-using System;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using System.ComponentModel;
+using System.IO.Abstractions;
 
-namespace GitBuddy.Commands.CICD
+namespace GitBuddy.Commands.CICD;
+
+public class CiCdCommand : AsyncCommand<CiCdCommand.Settings>
 {
-    public class CiCdCommand : AsyncCommand<CiCdCommand.Settings>
+    private readonly IFileSystem _fileSystem;
+    private readonly IEmbeddedResourceLoader _resourceLoader;
+
+    public class Settings : CommandSettings
     {
-        public class Settings : CommandSettings
+        [CommandOption("-t|--type <TYPE>")]
+        [Description("Project type (dotnet, nodejs, python, go, docker, generic)")]
+        public string? ProjectType { get; set; }
+
+        [CommandOption("-o|--output <PATH>")]
+        [Description("Output file path (default: .github/workflows/ci.yml)")]
+        public string? OutputPath { get; set; }
+
+        [CommandOption("-f|--force")]
+        [Description("Overwrite existing workflow file without prompting")]
+        public bool Force { get; set; }
+
+        [CommandOption("-n|--dry-run")]
+        [Description("Show what would be generated without writing files")]
+        public bool DryRun { get; set; }
+    }
+
+    public CiCdCommand(IFileSystem fileSystem, IEmbeddedResourceLoader resourceLoader)
+    {
+        _fileSystem = fileSystem;
+        _resourceLoader = resourceLoader;
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    {
+        AnsiConsole.MarkupLine("[bold blue]🤖 GitBuddy CI/CD Setup[/]");
+        AnsiConsole.WriteLine();
+
+        // Detect or use specified project type
+        var templateManager = new TemplateManager(_fileSystem);
+        string? projectType = settings.ProjectType?.ToLowerInvariant();
+        
+        if (string.IsNullOrEmpty(projectType))
         {
-            // We can add options like --force, --type, etc. later
+            projectType = templateManager.DetectProjectType();
         }
 
-        public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+        if (string.IsNullOrEmpty(projectType))
         {
-            AnsiConsole.MarkupLine("[bold blue]🤖 GitBuddy CI/CD Setup[/]");
-            AnsiConsole.MarkupLine("[grey]I will analyze your project and generate a GitHub Actions workflow for you.[/]");
+            AnsiConsole.MarkupLine("[bold red]❌ Could not auto-detect project type.[/]");
             AnsiConsole.WriteLine();
-
-            // 1. Analyze Project Type
-            var projectType = DetectProjectType();
-            
-            if (projectType == ProjectType.Unknown)
+            AnsiConsole.MarkupLine("Supported types:");
+            foreach (var t in templateManager.GetAllTemplates())
             {
-                AnsiConsole.MarkupLine("[bold red]❌ Could not auto-detect project type.[/]");
-                AnsiConsole.MarkupLine("Currently, I only support [green].NET[/] and [green]Node.js[/] projects automatically.");
-                return 1;
+                AnsiConsole.MarkupLine($"  [green]• {t.DisplayName}[/] ({t.Key})");
             }
+            return 1;
+        }
 
-            AnsiConsole.MarkupLine($"[bold green]✓[/] Detected project type: [bold cyan]{projectType}[/]");
+        var template = templateManager.GetTemplate(projectType);
+        if (template == null)
+        {
+            AnsiConsole.MarkupLine($"[bold red]❌ Unknown project type: {projectType}[/]");
+            return 1;
+        }
 
-            // 2. Generate Template content
-            var yamlContent = GenerateTemplate(projectType);
-            var workflowDir = Path.Combine(".github", "workflows");
-            var filePath = Path.Combine(workflowDir, "ci.yml");
+        AnsiConsole.MarkupLine($"[bold green]✓[/] Project type: [bold cyan]{template.DisplayName}[/]");
 
-            // 3. Confirm with user
+        // Load template content
+        var yamlContent = await _resourceLoader.LoadTemplateAsync(template.TemplateFileName, cancellationToken);
+        if (string.IsNullOrEmpty(yamlContent))
+        {
+            AnsiConsole.MarkupLine("[bold red]❌ Failed to load template.[/]");
+            return 1;
+        }
+
+        // Determine output path
+        var filePath = settings.OutputPath ?? Path.Combine(".github", "workflows", "ci.yml");
+
+        if (settings.DryRun)
+        {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine($"I am ready to create the workflow file at: [blue]{filePath}[/]");
-            
-            if (File.Exists(filePath))
-            {
-                AnsiConsole.MarkupLine("[bold yellow]⚠ Warning: A CI file already exists at this location.[/]");
-            }
-
-            if (!AnsiConsole.Confirm("Do you want me to generate the file?"))
-            {
-                AnsiConsole.MarkupLine("[yellow]Operation cancelled.[/]");
-                return 0;
-            }
-
-            // 4. Write File
-            try
-            {
-                if (!Directory.Exists(workflowDir))
-                {
-                    Directory.CreateDirectory(workflowDir);
-                }
-
-                await File.WriteAllTextAsync(filePath, yamlContent, cancellationToken);
-                
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[bold green]✨ Success! CI/CD workflow generated.[/]");
-                AnsiConsole.MarkupLine("Commit and push this file to GitHub to trigger your first build:");
-                AnsiConsole.MarkupLine($"[grey]git add {filePath} && git commit -m \"ci: add github actions workflow\" && git push[/]");
-            }
-            catch (Exception ex)
-            {
-                AnsiConsole.MarkupLine("[bold red]❌ Error writing file:[/]");
-                AnsiConsole.WriteException(ex);
-                return 1;
-            }
-
+            AnsiConsole.MarkupLine("[bold yellow]📄 Dry Run - Would generate:[/]");
+            AnsiConsole.WriteLine(yamlContent);
             return 0;
         }
 
-        private enum ProjectType
+        // Check if file exists
+        if (_fileSystem.File.Exists(filePath) && !settings.Force)
         {
-            DotNet,
-            NodeJs,
-            Unknown
+            AnsiConsole.MarkupLine("[bold yellow]⚠ Warning: A CI file already exists.[/]");
+            if (!AnsiConsole.Confirm("Overwrite it?"))
+            {
+                AnsiConsole.MarkupLine("[yellow]Cancelled.[/]");
+                return 0;
+            }
         }
 
-        private ProjectType DetectProjectType()
+        // Write file
+        try
         {
-            var currentDir = Directory.GetCurrentDirectory();
-
-            if (Directory.GetFiles(currentDir, "*.csproj", SearchOption.TopDirectoryOnly).Any() ||
-                Directory.GetFiles(currentDir, "*.sln", SearchOption.TopDirectoryOnly).Any())
+            var dir = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(dir) && !_fileSystem.Directory.Exists(dir))
             {
-                return ProjectType.DotNet;
+                _fileSystem.Directory.CreateDirectory(dir);
             }
 
-            if (File.Exists(Path.Combine(currentDir, "package.json")))
-            {
-                return ProjectType.NodeJs;
-            }
-
-            return ProjectType.Unknown;
+            await _fileSystem.File.WriteAllTextAsync(filePath, yamlContent, cancellationToken);
+            
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[bold green]✨ Success! Workflow generated.[/]");
+            AnsiConsole.MarkupLine($"[grey]git add {filePath} && git commit -m \"ci: add github actions workflow\"[/]");
         }
-
-        private string GenerateTemplate(ProjectType type)
+        catch (Exception ex)
         {
-            return type switch
-            {
-                ProjectType.DotNet => GetDotNetTemplate(),
-                ProjectType.NodeJs => GetNodeJsTemplate(),
-                _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
-            };
+            AnsiConsole.MarkupLine("[bold red]❌ Error:[/]");
+            AnsiConsole.WriteException(ex);
+            return 1;
         }
 
-        private string GetDotNetTemplate()
-        {
-            return @"name: CI
-
-on:
-  push:
-    branches: [ ""main"", ""master"" ]
-  pull_request:
-    branches: [ ""main"", ""master"" ]
-
-jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-        
-    - name: Restore dependencies
-      run: dotnet restore
-      
-    - name: Build
-      run: dotnet build --no-restore
-      
-    - name: Test
-      run: dotnet test --no-build --verbosity normal";
-        }
-
-        private string GetNodeJsTemplate()
-        {
-            return @"name: Node.js CI
-
-on:
-  push:
-    branches: [ ""main"", ""master"" ]
-  pull_request:
-    branches: [ ""main"", ""master"" ]
-
-jobs:
-  build:
-
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        
-    - run: npm ci
-    - run: npm run build --if-present
-    - run: npm test";
-        }
+        return 0;
     }
 }
+
+// Branch settings for cicd command
+public class CiCdSettings : CommandSettings { }
