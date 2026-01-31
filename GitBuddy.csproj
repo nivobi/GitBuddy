@@ -2,25 +2,32 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <Version>1.2.0</Version>
-    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);CS8618;CS8604;CS8619;CS8602;CS8603;CA1416</NoWarn>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>buddy</ToolCommandName>
-    <PackageId>Nivobi.GitBuddy</PackageId> 
+    <PackageId>Nivobi.GitBuddy</PackageId>
     <PackageIcon>icon.png</PackageIcon>
     <Authors>Nivobi</Authors>
     <Description>Focus on coding, let GitBuddy handle the chores.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- MinVer Configuration -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>1.2</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview</MinVerDefaultPreReleaseIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.2" />
+    <PackageReference Include="MinVer" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.53.1" />
     <PackageReference Include="System.IO.Abstractions" Version="22.1.0" />
