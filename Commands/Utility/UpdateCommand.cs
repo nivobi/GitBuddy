@@ -24,24 +24,16 @@ namespace GitBuddy.Commands.Utility
             AnsiConsole.MarkupLine("[bold blue]Checking for GitBuddy updates...[/]");
 
             ProcessResult result = null!;
-            await AnsiConsole.Status().StartAsync("Checking for updates...", async ctx =>
+            await AnsiConsole.Status().StartAsync("Updating GitBuddy...", async ctx =>
             {
-                result = await _processRunner.RunAsync("dotnet", "tool update -g Nivobi.GitBuddy", cancellationToken);
+                // Use 120 second timeout for update operations (network dependent)
+                result = await _processRunner.RunAsync("dotnet", "tool update -g Nivobi.GitBuddy", 120000, cancellationToken);
             });
 
             var output = result.Output + result.Error;
 
             if (result.ExitCode == 0 && output.Contains("was successfully updated"))
             {
-                AnsiConsole.Progress()
-                    .AutoClear(false)
-                    .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn(), new SpinnerColumn())
-                    .Start(ctx =>
-                    {
-                        var task = ctx.AddTask("[green]Updating Nivobi.GitBuddy[/]");
-                        task.Increment(100);
-                    });
-
                 AnsiConsole.MarkupLine("[bold green]✨ GitBuddy has been updated to the latest version![/]");
             }
             else if (output.Contains("is already installed"))
@@ -51,9 +43,9 @@ namespace GitBuddy.Commands.Utility
             else
             {
                 AnsiConsole.MarkupLine("[yellow]⚠[/] Unable to check for updates. Please try again later.");
-                if (!string.IsNullOrWhiteSpace(result.Error))
+                if (!string.IsNullOrWhiteSpace(output))
                 {
-                    AnsiConsole.MarkupLine($"[grey]{result.Error}[/]");
+                    AnsiConsole.MarkupLine($"[grey]{output}[/]");
                 }
             }
 

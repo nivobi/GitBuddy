@@ -7,6 +7,7 @@ using Spectre.Console.Cli;
 using GitBuddy.Commands.Git;
 using GitBuddy.Commands.Config;
 using GitBuddy.Commands.Utility;
+using GitBuddy.Commands.CICD;
 using GitBuddy.Infrastructure;
 using GitBuddy.Services;
 
@@ -76,6 +77,9 @@ namespace GitBuddy
 
                 config.AddCommand<UpdateCommand>("update")
                     .WithDescription("Updates GitBuddy to the latest version from NuGet");
+
+                config.AddCommand<CiCdCommand>("cicd")
+                    .WithDescription("Generate a CI/CD pipeline for your project.");
 
                 // --- NEW WELCOME LOGIC START ---
                 string welcomeFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gitbuddy_welcome");
