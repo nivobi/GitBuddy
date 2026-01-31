@@ -56,8 +56,10 @@ namespace GitBuddy
                           .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
                           .InformationalVersion ?? "1.0.0";
 
+                var cleanVersion = version.Split('+')[0];
+
                 config.SetApplicationName("git-buddy");
-                config.SetApplicationVersion(version);
+                config.SetApplicationVersion(cleanVersion);
 
                 config.AddCommand<StatusCommand>("status")
                     .WithDescription("Check the current state of the repo.");
