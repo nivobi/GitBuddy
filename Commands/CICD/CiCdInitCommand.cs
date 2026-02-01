@@ -1,6 +1,8 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.IO.Abstractions;
+using Microsoft.Extensions.Logging;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.CICD;
 
@@ -9,6 +11,7 @@ public class CiCdInitCommand : AsyncCommand<CiCdInitCommand.Settings>
     private readonly IFileSystem _fileSystem;
     private readonly IEmbeddedResourceLoader _resourceLoader;
     private readonly TemplateManager _templateManager;
+    private readonly ILogger<CiCdInitCommand> _logger;
 
     public class Settings : CommandSettings
     {
@@ -16,15 +19,22 @@ public class CiCdInitCommand : AsyncCommand<CiCdInitCommand.Settings>
         public string? OutputPath { get; set; }
     }
 
-    public CiCdInitCommand(IFileSystem fileSystem, IEmbeddedResourceLoader resourceLoader)
+    public CiCdInitCommand(
+        IFileSystem fileSystem,
+        IEmbeddedResourceLoader resourceLoader,
+        TemplateManager templateManager,
+        ILogger<CiCdInitCommand> logger)
     {
         _fileSystem = fileSystem;
         _resourceLoader = resourceLoader;
-        _templateManager = new TemplateManager(fileSystem);
+        _templateManager = templateManager;
+        _logger = logger;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        using var execLog = new CommandExecutionLogger<CiCdInitCommand>(_logger, "cicd-init", settings);
+
         AnsiConsole.MarkupLine("[bold blue]🚀 GitBuddy CI/CD Interactive Setup[/]");
         AnsiConsole.WriteLine();
 
@@ -116,6 +126,7 @@ public class CiCdInitCommand : AsyncCommand<CiCdInitCommand.Settings>
             return 1;
         }
 
+        execLog.Complete(0);
         return 0;
     }
 

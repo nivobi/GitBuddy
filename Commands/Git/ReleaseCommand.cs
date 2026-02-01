@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -10,10 +11,12 @@ namespace GitBuddy.Commands.Git
     public class ReleaseCommand : AsyncCommand<ReleaseCommand.Settings>
     {
         private readonly IGitService _gitService;
+        private readonly ILogger<ReleaseCommand> _logger;
 
-        public ReleaseCommand(IGitService gitService)
+        public ReleaseCommand(IGitService gitService, ILogger<ReleaseCommand> logger)
         {
             _gitService = gitService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -37,6 +40,8 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<ReleaseCommand>(_logger, "release", settings);
+
             if (!await _gitService.IsGitRepositoryAsync(cancellationToken))
             {
                 AnsiConsole.MarkupLine("[red]✗ Error:[/] Not in a git repository.");
@@ -47,7 +52,9 @@ namespace GitBuddy.Commands.Git
 
             if (string.IsNullOrWhiteSpace(bump))
             {
-                return await ShowStatus(cancellationToken);
+                var statusResult = await ShowStatus(cancellationToken);
+                execLog.Complete(statusResult);
+                return statusResult;
             }
 
             if (bump != "patch" && bump != "minor" && bump != "major")
@@ -56,7 +63,9 @@ namespace GitBuddy.Commands.Git
                 return 1;
             }
 
-            return await CreateRelease(bump, settings, cancellationToken);
+            var releaseResult = await CreateRelease(bump, settings, cancellationToken);
+            execLog.Complete(releaseResult);
+            return releaseResult;
         }
 
         private async Task<int> ShowStatus(CancellationToken cancellationToken)

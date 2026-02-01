@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Diagnostics;
@@ -12,16 +13,20 @@ namespace GitBuddy.Commands.Git
     public class SyncCommand : AsyncCommand<SyncCommand.Settings>
     {
         private readonly IGitService _gitService;
+        private readonly ILogger<SyncCommand> _logger;
 
-        public SyncCommand(IGitService gitService)
+        public SyncCommand(IGitService gitService, ILogger<SyncCommand> logger)
         {
             _gitService = gitService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings { }
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<SyncCommand>(_logger, "sync", settings);
+
             AnsiConsole.Write(new Rule("[blue]Cloud Sync[/]"));
 
             // 1. Check if a remote is linked
@@ -157,6 +162,7 @@ namespace GitBuddy.Commands.Git
                 await CheckForMergedBranches(currentBranch, cancellationToken);
             }
 
+            execLog.Complete(0);
             return 0;
         }
 

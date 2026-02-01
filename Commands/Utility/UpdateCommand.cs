@@ -2,6 +2,7 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.Utility
@@ -9,10 +10,12 @@ namespace GitBuddy.Commands.Utility
     public class UpdateCommand : AsyncCommand<UpdateCommand.Settings>
     {
         private readonly IProcessRunner _processRunner;
+        private readonly ILogger<UpdateCommand> _logger;
 
-        public UpdateCommand(IProcessRunner processRunner)
+        public UpdateCommand(IProcessRunner processRunner, ILogger<UpdateCommand> logger)
         {
             _processRunner = processRunner;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -21,6 +24,8 @@ namespace GitBuddy.Commands.Utility
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<UpdateCommand>(_logger, "update", settings);
+
             AnsiConsole.MarkupLine("[bold blue]Checking for GitBuddy updates...[/]");
 
             ProcessResult result = null!;
@@ -49,6 +54,7 @@ namespace GitBuddy.Commands.Utility
                 }
             }
 
+            execLog.Complete(0);
             return 0;
         }
     }

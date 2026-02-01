@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -10,10 +11,12 @@ namespace GitBuddy.Commands.Git
     public class BranchCommand : AsyncCommand<BranchCommand.Settings>
     {
         private readonly IGitService _gitService;
+        private readonly ILogger<BranchCommand> _logger;
 
-        public BranchCommand(IGitService gitService)
+        public BranchCommand(IGitService gitService, ILogger<BranchCommand> logger)
         {
             _gitService = gitService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -33,6 +36,8 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<BranchCommand>(_logger, "branch", settings);
+
             // Check if we're in a git repository
             if (!await _gitService.IsGitRepositoryAsync(cancellationToken))
             {
@@ -43,16 +48,19 @@ namespace GitBuddy.Commands.Git
 
             var action = settings.Action?.ToLower() ?? "list";
 
-            return action switch
+            var result = await (action switch
             {
-                "create" => await CreateBranch(settings.Name, cancellationToken),
-                "switch" => await SwitchBranch(cancellationToken),
-                "list" => await ListBranches(cancellationToken),
-                "clean" => await CleanBranches(cancellationToken),
-                "delete" => await DeleteBranch(settings.Name, cancellationToken),
-                "rename" => await RenameBranch(settings.Name, settings.NewName, cancellationToken),
-                _ => await ShowHelp(cancellationToken)
-            };
+                "create" => CreateBranch(settings.Name, cancellationToken),
+                "switch" => SwitchBranch(cancellationToken),
+                "list" => ListBranches(cancellationToken),
+                "clean" => CleanBranches(cancellationToken),
+                "delete" => DeleteBranch(settings.Name, cancellationToken),
+                "rename" => RenameBranch(settings.Name, settings.NewName, cancellationToken),
+                _ => ShowHelp(cancellationToken)
+            });
+
+            execLog.Complete(result);
+            return result;
         }
 
         private async Task<int> CreateBranch(string? name, CancellationToken cancellationToken)

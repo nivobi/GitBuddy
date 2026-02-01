@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -9,10 +10,12 @@ namespace GitBuddy.Commands.Git
     public class UndoCommand : AsyncCommand<UndoCommand.Settings>
     {
         private readonly IGitService _gitService;
+        private readonly ILogger<UndoCommand> _logger;
 
-        public UndoCommand(IGitService gitService)
+        public UndoCommand(IGitService gitService, ILogger<UndoCommand> logger)
         {
             _gitService = gitService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -21,6 +24,8 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<UndoCommand>(_logger, "undo", settings);
+
             // 1. Ask the user what they want to do
             var choice = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
@@ -35,6 +40,7 @@ namespace GitBuddy.Commands.Git
             if (choice == "Cancel (Do nothing)")
             {
                 AnsiConsole.MarkupLine("[grey]Operation cancelled.[/]");
+                execLog.Complete(0);
                 return 0;
             }
 
@@ -49,6 +55,7 @@ namespace GitBuddy.Commands.Git
                 if (!AnsiConsole.Confirm("[red]Are you sure? This will delete all unsaved work permanently.[/]"))
                 {
                     AnsiConsole.MarkupLine("[grey]Phew. Cancelled.[/]");
+                    execLog.Complete(0);
                     return 0;
                 }
 
@@ -58,6 +65,7 @@ namespace GitBuddy.Commands.Git
                 AnsiConsole.MarkupLine("[green]✔ Changes discarded. You are back to your last save.[/]");
             }
 
+            execLog.Complete(0);
             return 0;
         }
     }

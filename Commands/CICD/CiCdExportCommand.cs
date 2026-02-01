@@ -1,6 +1,8 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
 using System.IO.Abstractions;
+using Microsoft.Extensions.Logging;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.CICD;
 
@@ -9,6 +11,7 @@ public class CiCdExportCommand : AsyncCommand<CiCdExportCommand.Settings>
     private readonly IFileSystem _fileSystem;
     private readonly IEmbeddedResourceLoader _resourceLoader;
     private readonly TemplateManager _templateManager;
+    private readonly ILogger<CiCdExportCommand> _logger;
 
     public class Settings : CommandSettings
     {
@@ -22,15 +25,22 @@ public class CiCdExportCommand : AsyncCommand<CiCdExportCommand.Settings>
         public bool ExportAll { get; set; }
     }
 
-    public CiCdExportCommand(IFileSystem fileSystem, IEmbeddedResourceLoader resourceLoader)
+    public CiCdExportCommand(
+        IFileSystem fileSystem,
+        IEmbeddedResourceLoader resourceLoader,
+        TemplateManager templateManager,
+        ILogger<CiCdExportCommand> logger)
     {
         _fileSystem = fileSystem;
         _resourceLoader = resourceLoader;
-        _templateManager = new TemplateManager(fileSystem);
+        _templateManager = templateManager;
+        _logger = logger;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        using var execLog = new CommandExecutionLogger<CiCdExportCommand>(_logger, "cicd-export", settings);
+
         AnsiConsole.MarkupLine("[bold blue]📦 Export CI/CD Template[/]");
         AnsiConsole.WriteLine();
 
@@ -90,6 +100,7 @@ public class CiCdExportCommand : AsyncCommand<CiCdExportCommand.Settings>
             return 1;
         }
 
+        execLog.Complete(0);
         return 0;
     }
 

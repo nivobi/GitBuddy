@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -6,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using GitBuddy.Infrastructure;
 
@@ -17,17 +19,20 @@ namespace GitBuddy.Services
         private readonly IFileSystem _fileSystem;
         private readonly IConfigManager _configManager;
         private readonly HttpClient _httpClient;
+        private readonly ILogger<AiService> _logger;
 
         public AiService(
             IAnsiConsole console,
             IFileSystem fileSystem,
             IConfigManager configManager,
-            HttpClient httpClient)
+            HttpClient httpClient,
+            ILogger<AiService> logger)
         {
             _console = console;
             _fileSystem = fileSystem;
             _configManager = configManager;
             _httpClient = httpClient;
+            _logger = logger;
         }
 
         public async Task<string?> GenerateCommitMessage(string diff)
@@ -50,8 +55,8 @@ namespace GitBuddy.Services
                 model = model,
                 messages = new[]
                 {
-                    new { 
-                        role = "system", 
+                    new {
+                        role = "system",
                         content = $"You are an expert developer assistant for: {projectContext}. " +
                                   "Analyze the git diff and write a concise, professional commit message (max 50 chars). " +
                                   "Use imperative mood. Output ONLY the text."
@@ -61,7 +66,7 @@ namespace GitBuddy.Services
                 temperature = 0.3
             };
 
-            return await SendAiRequest(apiUrl, provider, apiKey, requestData);
+            return await SendAiRequest(apiUrl, provider, model, apiKey, requestData, "commit-message");
         }
 
         public async Task<string?> DescribeProject(string projectData)
@@ -80,8 +85,8 @@ namespace GitBuddy.Services
                 model = model,
                 messages = new[]
                 {
-                    new { 
-                        role = "system", 
+                    new {
+                        role = "system",
                         content = "You are a lead software architect. Analyze the provided code snippets. " +
                                   "Write a definitive, 2-sentence summary describing exactly what this project IS and its primary tech stack. " +
                                   "Do NOT use hedge phrases like 'This appears to be' or 'It seems'. Speak with authority. " +
@@ -89,10 +94,10 @@ namespace GitBuddy.Services
                     },
                     new { role = "user", content = $"Project Code Snippets:\n{projectData}" }
                 },
-                temperature = 0.2 
+                temperature = 0.2
             };
 
-            return await SendAiRequest(apiUrl, provider, apiKey, requestData);
+            return await SendAiRequest(apiUrl, provider, model, apiKey, requestData, "project-description");
         }
 
         private static string GetApiUrl(string provider)
@@ -106,8 +111,13 @@ namespace GitBuddy.Services
             };
         }
 
-        private async Task<string?> SendAiRequest(string apiUrl, string provider, string apiKey, object requestData)
+        private async Task<string?> SendAiRequest(string apiUrl, string provider, string model, string apiKey, object requestData, string purpose)
         {
+            var stopwatch = Stopwatch.StartNew();
+
+            _logger.LogInformation("AI request started: {Provider} {Model} for {Purpose}",
+                provider, model, purpose);
+
             try
             {
                 string jsonContent = JsonSerializer.Serialize(requestData);
@@ -131,6 +141,10 @@ namespace GitBuddy.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     string errorBody = await response.Content.ReadAsStringAsync();
+                    stopwatch.Stop();
+
+                    _logger.LogWarning("AI request failed: {Provider}, StatusCode: {StatusCode}, Error: {ErrorType}",
+                        provider, (int)response.StatusCode, response.StatusCode.ToString());
 
                     if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                     {
@@ -152,17 +166,33 @@ namespace GitBuddy.Services
                 }
 
                 string responseString = await response.Content.ReadAsStringAsync();
+                stopwatch.Stop();
+
+                // Estimate tokens (rough approximation)
+                int estimatedTokens = responseString.Length / 4;
+
+                _logger.LogInformation("AI request completed: {Provider} in {Duration}ms, EstimatedTokens: {Tokens}",
+                    provider, stopwatch.ElapsedMilliseconds, estimatedTokens);
+
                 using JsonDocument doc = JsonDocument.Parse(responseString);
                 return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()?.Trim();
             }
             catch (TaskCanceledException)
             {
+                stopwatch.Stop();
+                _logger.LogWarning("AI request timeout: {Provider} after {Duration}ms",
+                    provider, stopwatch.ElapsedMilliseconds);
+
                 _console.MarkupLine($"[red]✗ Timeout Error:[/] {provider} API did not respond within 30 seconds.");
                 _console.MarkupLine("[grey]The API might be overloaded. Please try again.[/]");
                 return null;
             }
             catch (HttpRequestException ex)
             {
+                stopwatch.Stop();
+                _logger.LogError(ex, "AI request failed: {Provider} after {Duration}ms, Error: {ErrorMessage}",
+                    provider, stopwatch.ElapsedMilliseconds, LoggingHelper.Truncate(ex.Message));
+
                 _console.MarkupLine($"[red]✗ Network Error:[/] Unable to connect to {provider}.");
 
                 // Provide more specific error messages
@@ -190,12 +220,20 @@ namespace GitBuddy.Services
             }
             catch (JsonException ex)
             {
+                stopwatch.Stop();
+                _logger.LogError(ex, "AI request failed: {Provider} - invalid JSON response after {Duration}ms",
+                    provider, stopwatch.ElapsedMilliseconds);
+
                 _console.MarkupLine($"[red]✗ AI Error:[/] Received invalid response from {provider}.");
                 _console.MarkupLine($"[grey]{ex.Message.EscapeMarkup()}[/]");
                 return null;
             }
             catch (Exception ex)
             {
+                stopwatch.Stop();
+                _logger.LogError(ex, "AI request failed: {Provider} - unexpected error after {Duration}ms",
+                    provider, stopwatch.ElapsedMilliseconds);
+
                 _console.MarkupLine($"[red]✗ Unexpected Error:[/] {ex.Message.EscapeMarkup()}");
                 _console.MarkupLine("[grey]Please report this issue if it persists.[/]");
                 return null;

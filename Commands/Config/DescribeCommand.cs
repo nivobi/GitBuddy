@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -11,16 +12,20 @@ namespace GitBuddy.Commands.Config
     public class DescribeCommand : AsyncCommand<DescribeCommand.Settings>
     {
         private readonly IAiService _aiService;
+        private readonly ILogger<DescribeCommand> _logger;
 
-        public DescribeCommand(IAiService aiService)
+        public DescribeCommand(IAiService aiService, ILogger<DescribeCommand> logger)
         {
             _aiService = aiService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings { }
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<DescribeCommand>(_logger, "describe", settings);
+            
             AnsiConsole.Write(new Rule("[yellow]AI Deep Analysis[/]"));
 
             // 1. Collect real data by reading key files
@@ -78,6 +83,7 @@ namespace GitBuddy.Commands.Config
                 AnsiConsole.MarkupLine("[green]✔ Project context updated successfully![/]");
             }
 
+            execLog.Complete(0);
             return 0;
         }
     }

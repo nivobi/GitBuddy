@@ -4,6 +4,7 @@ using System.IO.Abstractions;
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using GitBuddy.Infrastructure;
 using Spectre.Console;
 
@@ -14,27 +15,35 @@ namespace GitBuddy.Services
         public string AiProvider { get; set; } = "openai";
         public string AiModel { get; set; } = "gpt-4o-mini";
         public string EncryptedApiKey { get; set; } = string.Empty;
+
+        // Logging configuration
+        public LoggingConfig Logging { get; set; } = new LoggingConfig();
     }
 
     public class ConfigManager : IConfigManager
     {
         private readonly IFileSystem _fileSystem;
         private readonly IAnsiConsole _console;
+        private readonly ILogger<ConfigManager>? _logger;
         private (string Provider, string Model, string ApiKey)? _cachedConfig;
 
         private string ConfigPath => _fileSystem.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "GitBuddy",
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".gitbuddy",
             "config.json");
 
-        public ConfigManager(IFileSystem fileSystem, IAnsiConsole console)
+        public ConfigManager(IFileSystem fileSystem, IAnsiConsole console, ILogger<ConfigManager>? logger = null)
         {
             _fileSystem = fileSystem;
             _console = console;
+            _logger = logger;
         }
 
         public void SaveConfig(string provider, string model, string rawKey)
         {
+            _logger?.LogInformation("Saving configuration: Provider={Provider}, Model={Model}, HasApiKey={HasApiKey}",
+                provider, model, !string.IsNullOrEmpty(rawKey));
+
             var directory = _fileSystem.Path.GetDirectoryName(ConfigPath);
             if (!_fileSystem.Directory.Exists(directory))
                 _fileSystem.Directory.CreateDirectory(directory);
@@ -61,6 +70,9 @@ namespace GitBuddy.Services
                 return _cachedConfig.Value;
             }
 
+            _logger?.LogDebug("Loading configuration from {ConfigPath}",
+                LoggingHelper.SanitizePath(ConfigPath));
+
             if (!_fileSystem.File.Exists(ConfigPath))
             {
                 var defaultConfig = ("openai", "gpt-4o-mini", "");
@@ -83,6 +95,9 @@ namespace GitBuddy.Services
             }
             catch (JsonException ex)
             {
+                _logger?.LogWarning(ex, "Config file is corrupted at {ConfigPath}",
+                    LoggingHelper.SanitizePath(ConfigPath));
+
                 _console.MarkupLine("[yellow]⚠ Warning:[/] Config file is corrupted.");
                 _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
                 _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
@@ -93,6 +108,9 @@ namespace GitBuddy.Services
             }
             catch (IOException ex)
             {
+                _logger?.LogWarning(ex, "Could not read config file at {ConfigPath}",
+                    LoggingHelper.SanitizePath(ConfigPath));
+
                 _console.MarkupLine("[yellow]⚠ Warning:[/] Could not read config file.");
                 _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
                 _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
@@ -101,8 +119,11 @@ namespace GitBuddy.Services
                 _cachedConfig = defaultConfig;
                 return defaultConfig;
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
+                _logger?.LogWarning(ex, "Permission denied reading config file at {ConfigPath}",
+                    LoggingHelper.SanitizePath(ConfigPath));
+
                 _console.MarkupLine("[yellow]⚠ Warning:[/] Permission denied reading config file.");
                 _console.MarkupLine($"[grey]Location: {ConfigPath}[/]");
                 _console.MarkupLine("[grey]Check file permissions. Using default config.[/]");
@@ -112,6 +133,9 @@ namespace GitBuddy.Services
             }
             catch (Exception ex)
             {
+                _logger?.LogWarning(ex, "Unexpected error loading config from {ConfigPath}",
+                    LoggingHelper.SanitizePath(ConfigPath));
+
                 _console.MarkupLine("[yellow]⚠ Warning:[/] Unexpected error loading config.");
                 _console.MarkupLine($"[grey]Error: {ex.Message.EscapeMarkup()}[/]");
                 _console.MarkupLine("[grey]Using default config. Run[/] [blue]buddy config[/] [grey]to reconfigure.[/]");

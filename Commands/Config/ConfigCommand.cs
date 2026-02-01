@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -9,10 +10,12 @@ namespace GitBuddy.Commands.Config
     public class ConfigCommand : AsyncCommand<ConfigCommand.Settings>
     {
         private readonly IConfigManager _configManager;
+        private readonly ILogger<ConfigCommand> _logger;
 
-        public ConfigCommand(IConfigManager configManager)
+        public ConfigCommand(IConfigManager configManager, ILogger<ConfigCommand> logger)
         {
             _configManager = configManager;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -21,6 +24,8 @@ namespace GitBuddy.Commands.Config
 
         public override Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<ConfigCommand>(_logger, "config", settings);
+
             AnsiConsole.Write(new FigletText("Git Buddy").Color(Spectre.Console.Color.Blue));
 
             // 1. Load existing config to see if we have a key saved
@@ -88,6 +93,7 @@ namespace GitBuddy.Commands.Config
             });
 
             AnsiConsole.MarkupLine("[green]✔ Configuration updated successfully![/]");
+            execLog.Complete(0);
             return Task.FromResult(0);
         }
     }

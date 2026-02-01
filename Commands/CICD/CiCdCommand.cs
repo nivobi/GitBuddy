@@ -2,6 +2,8 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using System.ComponentModel;
 using System.IO.Abstractions;
+using Microsoft.Extensions.Logging;
+using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Commands.CICD;
 
@@ -9,6 +11,8 @@ public class CiCdCommand : AsyncCommand<CiCdCommand.Settings>
 {
     private readonly IFileSystem _fileSystem;
     private readonly IEmbeddedResourceLoader _resourceLoader;
+    private readonly TemplateManager _templateManager;
+    private readonly ILogger<CiCdCommand> _logger;
 
     public class Settings : CommandSettings
     {
@@ -29,24 +33,31 @@ public class CiCdCommand : AsyncCommand<CiCdCommand.Settings>
         public bool DryRun { get; set; }
     }
 
-    public CiCdCommand(IFileSystem fileSystem, IEmbeddedResourceLoader resourceLoader)
+    public CiCdCommand(
+        IFileSystem fileSystem,
+        IEmbeddedResourceLoader resourceLoader,
+        TemplateManager templateManager,
+        ILogger<CiCdCommand> logger)
     {
         _fileSystem = fileSystem;
         _resourceLoader = resourceLoader;
+        _templateManager = templateManager;
+        _logger = logger;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
+        using var execLog = new CommandExecutionLogger<CiCdCommand>(_logger, "cicd", settings);
+
         AnsiConsole.MarkupLine("[bold blue]🤖 GitBuddy CI/CD Setup[/]");
         AnsiConsole.WriteLine();
 
         // Detect or use specified project type
-        var templateManager = new TemplateManager(_fileSystem);
         string? projectType = settings.ProjectType?.ToLowerInvariant();
         
         if (string.IsNullOrEmpty(projectType))
         {
-            projectType = templateManager.DetectProjectType();
+            projectType = _templateManager.DetectProjectType();
         }
 
         if (string.IsNullOrEmpty(projectType))
@@ -54,21 +65,14 @@ public class CiCdCommand : AsyncCommand<CiCdCommand.Settings>
             AnsiConsole.MarkupLine("[bold red]❌ Could not auto-detect project type.[/]");
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("Supported types:");
-            foreach (var t in templateManager.GetAllTemplates())
+            foreach (var t in _templateManager.GetAllTemplates())
             {
                 AnsiConsole.MarkupLine($"  [green]• {t.DisplayName}[/] ({t.Key})");
             }
             return 1;
         }
 
-        var template = templateManager.GetTemplate(projectType);
-        if (template == null)
-        {
-            AnsiConsole.MarkupLine($"[bold red]❌ Unknown project type: {projectType}[/]");
-            return 1;
-        }
-
-        AnsiConsole.MarkupLine($"[bold green]✓[/] Project type: [bold cyan]{template.DisplayName}[/]");
+        var template = _templateManager.GetTemplate(projectType);
 
         // Load template content
         var yamlContent = await _resourceLoader.LoadTemplateAsync(template.TemplateFileName, cancellationToken);
@@ -122,6 +126,7 @@ public class CiCdCommand : AsyncCommand<CiCdCommand.Settings>
             return 1;
         }
 
+        execLog.Complete(0);
         return 0;
     }
 }

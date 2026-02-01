@@ -1,6 +1,7 @@
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -10,10 +11,12 @@ namespace GitBuddy.Commands.Git
     public class SetupCommand : AsyncCommand<SetupCommand.Settings>
     {
         private readonly IGitService _gitService;
+        private readonly ILogger<SetupCommand> _logger;
 
-        public SetupCommand(IGitService gitService)
+        public SetupCommand(IGitService gitService, ILogger<SetupCommand> logger)
         {
             _gitService = gitService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings { }
@@ -397,6 +400,8 @@ logs/
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<SetupCommand>(_logger, "setup", settings);
+
             AnsiConsole.Write(new Rule("[yellow]GitBuddy Setup[/]"));
 
             // 1. Git Init
@@ -430,6 +435,7 @@ logs/
             AnsiConsole.Write(new Panel("Project is ready. Run 'buddy save' to save work manually, or 'buddy save --ai' for help.")
                 .BorderColor(Color.Green));
 
+            execLog.Complete(0);
             return 0;
         }
     }

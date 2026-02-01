@@ -1,10 +1,17 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace GitBuddy.Infrastructure
 {
     public class ProcessRunner : IProcessRunner
     {
         private const int DefaultTimeoutMs = 30000; // 30 seconds
+        private readonly ILogger<ProcessRunner> _logger;
+
+        public ProcessRunner(ILogger<ProcessRunner> logger)
+        {
+            _logger = logger;
+        }
 
         public Task<ProcessResult> RunAsync(string fileName, string arguments, CancellationToken cancellationToken = default)
         {
@@ -46,10 +53,12 @@ namespace GitBuddy.Infrastructure
                 try
                 {
                     process.Kill(entireProcessTree: true);
+                    _logger.LogWarning("Process '{FileName}' was killed due to timeout after {TimeoutMs}ms",
+                        fileName, timeoutMs);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Process may have already exited
+                    _logger.LogDebug(ex, "Failed to kill process '{FileName}' (may have already exited)", fileName);
                 }
 
                 if (cancellationToken.IsCancellationRequested)
@@ -58,6 +67,11 @@ namespace GitBuddy.Infrastructure
                 }
 
                 throw new TimeoutException($"Process '{fileName}' timed out after {timeoutMs}ms");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Process '{FileName}' failed with exception", fileName);
+                throw;
             }
         }
     }

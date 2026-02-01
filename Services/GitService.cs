@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using GitBuddy.Infrastructure;
 
 namespace GitBuddy.Services
@@ -5,15 +7,44 @@ namespace GitBuddy.Services
     public class GitService : IGitService
     {
         private readonly IProcessRunner _processRunner;
+        private readonly ILogger<GitService> _logger;
 
-        public GitService(IProcessRunner processRunner)
+        public GitService(IProcessRunner processRunner, ILogger<GitService> logger)
         {
             _processRunner = processRunner;
+            _logger = logger;
         }
 
-        public Task<ProcessResult> RunAsync(string args, CancellationToken cancellationToken = default)
+        public async Task<ProcessResult> RunAsync(string args, CancellationToken cancellationToken = default)
         {
-            return _processRunner.RunAsync("git", args, cancellationToken);
+            var stopwatch = Stopwatch.StartNew();
+            _logger.LogDebug("Executing git command: {GitCommand}", $"git {args}");
+
+            try
+            {
+                var result = await _processRunner.RunAsync("git", args, cancellationToken);
+                stopwatch.Stop();
+
+                if (result.ExitCode == 0)
+                {
+                    _logger.LogDebug("Git command succeeded: {GitCommand} in {Duration}ms",
+                        $"git {args}", stopwatch.ElapsedMilliseconds);
+                }
+                else
+                {
+                    _logger.LogWarning("Git command failed: {GitCommand}, ExitCode: {ExitCode}, StdErr: {StdErr}",
+                        $"git {args}", result.ExitCode, LoggingHelper.Truncate(result.Error));
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Git command threw exception: {GitCommand} after {Duration}ms",
+                    $"git {args}", stopwatch.ElapsedMilliseconds);
+                throw;
+            }
         }
 
         public Task<ProcessResult> RunAsync(string args, string fileName, CancellationToken cancellationToken = default)
@@ -21,9 +52,37 @@ namespace GitBuddy.Services
             return _processRunner.RunAsync(fileName, args, cancellationToken);
         }
 
-        public Task<ProcessResult> RunAsync(string args, int timeoutMs, CancellationToken cancellationToken = default)
+        public async Task<ProcessResult> RunAsync(string args, int timeoutMs, CancellationToken cancellationToken = default)
         {
-            return _processRunner.RunAsync("git", args, timeoutMs, cancellationToken);
+            var stopwatch = Stopwatch.StartNew();
+            _logger.LogDebug("Executing git command: {GitCommand} with timeout: {Timeout}ms",
+                $"git {args}", timeoutMs);
+
+            try
+            {
+                var result = await _processRunner.RunAsync("git", args, timeoutMs, cancellationToken);
+                stopwatch.Stop();
+
+                if (result.ExitCode == 0)
+                {
+                    _logger.LogDebug("Git command succeeded: {GitCommand} in {Duration}ms",
+                        $"git {args}", stopwatch.ElapsedMilliseconds);
+                }
+                else
+                {
+                    _logger.LogWarning("Git command failed: {GitCommand}, ExitCode: {ExitCode}, StdErr: {StdErr}",
+                        $"git {args}", result.ExitCode, LoggingHelper.Truncate(result.Error));
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Git command threw exception: {GitCommand} after {Duration}ms",
+                    $"git {args}", stopwatch.ElapsedMilliseconds);
+                throw;
+            }
         }
 
         public async Task<bool> IsGitRepositoryAsync(CancellationToken cancellationToken = default)

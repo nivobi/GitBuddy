@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -10,10 +11,12 @@ namespace GitBuddy.Commands.Git
     public class StashCommand : AsyncCommand<StashCommand.Settings>
     {
         private readonly IGitService _gitService;
+        private readonly ILogger<StashCommand> _logger;
 
-        public StashCommand(IGitService gitService)
+        public StashCommand(IGitService gitService, ILogger<StashCommand> logger)
         {
             _gitService = gitService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -37,6 +40,8 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<StashCommand>(_logger, "stash", settings);
+
             // Check if we're in a git repository
             if (!await _gitService.IsGitRepositoryAsync(cancellationToken))
             {
@@ -47,14 +52,17 @@ namespace GitBuddy.Commands.Git
 
             var action = settings.Action?.ToLower() ?? "list";
 
-            return action switch
+            var result = await (action switch
             {
-                "push" => await PushStash(settings, cancellationToken),
-                "pop" => await PopStash(settings.Index, cancellationToken),
-                "apply" => await ApplyStash(settings.Index, cancellationToken),
-                "list" => await ListStashes(cancellationToken),
-                _ => await ListStashes(cancellationToken) // Default to list for unknown actions
-            };
+                "push" => PushStash(settings, cancellationToken),
+                "pop" => PopStash(settings.Index, cancellationToken),
+                "apply" => ApplyStash(settings.Index, cancellationToken),
+                "list" => ListStashes(cancellationToken),
+                _ => ListStashes(cancellationToken) // Default to list for unknown actions
+            });
+
+            execLog.Complete(result);
+            return result;
         }
 
         private async Task<int> PushStash(Settings settings, CancellationToken cancellationToken)

@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -13,12 +14,18 @@ namespace GitBuddy.Commands.Git
         private readonly IGitService _gitService;
         private readonly IConfigManager _configManager;
         private readonly IAiService _aiService;
+        private readonly ILogger<SaveCommand> _logger;
 
-        public SaveCommand(IGitService gitService, IConfigManager configManager, IAiService aiService)
+        public SaveCommand(
+            IGitService gitService,
+            IConfigManager configManager,
+            IAiService aiService,
+            ILogger<SaveCommand> logger)
         {
             _gitService = gitService;
             _configManager = configManager;
             _aiService = aiService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -30,6 +37,8 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<SaveCommand>(_logger, "save", settings);
+
             // Check if we're in a git repository
             if (!await _gitService.IsGitRepositoryAsync(cancellationToken))
             {
@@ -95,6 +104,7 @@ namespace GitBuddy.Commands.Git
                 if (choice == "✖ Cancel")
                 {
                     AnsiConsole.MarkupLine("[red]Save cancelled.[/]");
+                    execLog.Complete(0);
                     return 0;
                 }
 
@@ -112,6 +122,7 @@ namespace GitBuddy.Commands.Git
                 .Header("✔ Work Saved")
                 .BorderColor(Color.Green));
 
+            execLog.Complete(0);
             return 0;
         }
     }

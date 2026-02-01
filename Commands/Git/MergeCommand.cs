@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using GitBuddy.Infrastructure;
@@ -12,12 +13,18 @@ namespace GitBuddy.Commands.Git
         private readonly IGitService _gitService;
         private readonly IConfigManager _configManager;
         private readonly IAiService _aiService;
+        private readonly ILogger<MergeCommand> _logger;
 
-        public MergeCommand(IGitService gitService, IConfigManager configManager, IAiService aiService)
+        public MergeCommand(
+            IGitService gitService,
+            IConfigManager configManager,
+            IAiService aiService,
+            ILogger<MergeCommand> logger)
         {
             _gitService = gitService;
             _configManager = configManager;
             _aiService = aiService;
+            _logger = logger;
         }
 
         public class Settings : CommandSettings
@@ -37,6 +44,8 @@ namespace GitBuddy.Commands.Git
 
         public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
         {
+            using var execLog = new CommandExecutionLogger<MergeCommand>(_logger, "merge", settings);
+
             // Check if we're in a git repository
             if (!await _gitService.IsGitRepositoryAsync(cancellationToken))
             {
@@ -68,6 +77,7 @@ namespace GitBuddy.Commands.Git
                     var selectedTarget = await SelectBranch(currentBranch, $"Which branch do you want to merge [blue]{currentBranch}[/] into?", cancellationToken);
                     if (string.IsNullOrWhiteSpace(selectedTarget))
                     {
+                        execLog.Complete(0);
                         return 0; // User cancelled
                     }
                     targetBranch = selectedTarget;
@@ -88,6 +98,7 @@ namespace GitBuddy.Commands.Git
                     var selectedSource = await SelectBranch(currentBranch, "Which branch do you want to [green]merge[/]?", cancellationToken);
                     if (string.IsNullOrWhiteSpace(selectedSource))
                     {
+                        execLog.Complete(0);
                         return 0; // User cancelled
                     }
                     sourceBranch = selectedSource;
@@ -124,6 +135,7 @@ namespace GitBuddy.Commands.Git
                 if (!AnsiConsole.Confirm("Continue with merge anyway?", false))
                 {
                     AnsiConsole.MarkupLine("[yellow]Merge cancelled.[/]");
+                    execLog.Complete(0);
                     return 0;
                 }
             }
@@ -135,6 +147,7 @@ namespace GitBuddy.Commands.Git
             if (!AnsiConsole.Confirm($"\nMerge [blue]{sourceBranch}[/] into [blue]{targetBranch}[/]?", true))
             {
                 AnsiConsole.MarkupLine("[yellow]Merge cancelled.[/]");
+                execLog.Complete(0);
                 return 0;
             }
 
@@ -154,7 +167,9 @@ namespace GitBuddy.Commands.Git
             }
 
             // Attempt the merge
-            return await PerformMerge(sourceBranch, targetBranch, settings.UseAi, cancellationToken);
+            var exitCode = await PerformMerge(sourceBranch, targetBranch, settings.UseAi, cancellationToken);
+            execLog.Complete(exitCode);
+            return exitCode;
         }
 
         private async Task<string?> SelectBranch(string currentBranch, string? title = null, CancellationToken cancellationToken = default)
