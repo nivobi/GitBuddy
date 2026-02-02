@@ -159,9 +159,25 @@ namespace GitBuddy.Commands.Git
                 {
                     switchResult = await _gitService.RunAsync($"checkout {targetBranch}", cancellationToken);
                 });
-                if (switchResult.Output.Contains("error:") || switchResult.Output.Contains("fatal:"))
+
+                // Check exit code first (most reliable), then check both stdout and stderr for errors
+                if (switchResult.ExitCode != 0)
                 {
-                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch: {switchResult.Output}");
+                    var errorMessage = !string.IsNullOrWhiteSpace(switchResult.Error) ? switchResult.Error : switchResult.Output;
+                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch to {targetBranch}:");
+                    AnsiConsole.MarkupLine($"[grey]{errorMessage.EscapeMarkup()}[/]");
+                    execLog.Complete(1);
+                    return 1;
+                }
+
+                // Verify we actually switched branches
+                var verifyBranch = await _gitService.GetCurrentBranchAsync(cancellationToken);
+                if (verifyBranch != targetBranch)
+                {
+                    AnsiConsole.MarkupLine($"[red]✗[/] Failed to switch to {targetBranch}. Still on {verifyBranch}.");
+                    AnsiConsole.MarkupLine("[grey]This usually happens when you have uncommitted changes.[/]");
+                    AnsiConsole.MarkupLine("[grey]Try running[/] [blue]buddy save[/] [grey]or[/] [blue]buddy stash push[/] [grey]first.[/]");
+                    execLog.Complete(1);
                     return 1;
                 }
             }
